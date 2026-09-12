@@ -15,6 +15,7 @@
             {% if user.is_authenticated %}
                 <a href="{% url 'accounts:profile' user.pk %}">My home</a>
                 <a href="{% url 'accounts:member-list' %}">Members</a>
+                <a href="{% url 'courses:list' %}">Courses</a>
                 {% if user.role == "teacher" %}
                     <a href="{% url 'accounts:student-list' %}">Students</a>
                 {% endif %}

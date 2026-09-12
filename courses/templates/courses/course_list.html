@@ -1,0 +1,24 @@
+{% extends "accounts/base.html" %}
+{% block title %}Courses | Studyroom{% endblock %}
+{% block content %}
+    <h1>{{ heading|default:"Available courses" }}</h1>
+    {% if user.role == "teacher" %}
+        <p><a href="{% url 'courses:create' %}">Create a course</a></p>
+    {% endif %}
+    {% for course in page %}
+        <article class="course-summary">
+            <h2><a href="{% url 'courses:detail' course.pk %}">{{ course.title }}</a></h2>
+            <p>Teacher: <a href="{% url 'accounts:profile' course.teacher_id %}">{{ course.teacher.get_full_name|default:course.teacher.username }}</a></p>
+            <p>{{ course.description|truncatewords:40 }}</p>
+        </article>
+    {% empty %}
+        <p>No courses to show yet.</p>
+    {% endfor %}
+    {% if page.has_other_pages %}
+        <nav aria-label="Course pages">
+            {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Previous</a>{% endif %}
+            <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+            {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Next</a>{% endif %}
+        </nav>
+    {% endif %}
+{% endblock %}

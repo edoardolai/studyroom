@@ -58,3 +58,6 @@ input[type="checkbox"] { width: auto; }
 .status-update { padding: 1rem 0; border-bottom: 1px solid #d7dfd8; }
 .status-update time { color: #4c5b53; font-size: .9rem; }
 .status-update p { overflow-wrap: anywhere; }
+.course-summary { padding: 1rem 0; border-bottom: 1px solid #d7dfd8; }
+.course-summary h2 { margin-bottom: .5rem; }
+.course-description, .course-summary { overflow-wrap: anywhere; }

@@ -1,0 +1,8 @@
+{% extends "accounts/base.html" %}
+{% block title %}{{ course.title }} | Studyroom{% endblock %}
+{% block content %}
+    <p><a href="{% url 'courses:list' %}">All courses</a></p>
+    <h1>{{ course.title }}</h1>
+    <p>Teacher: <a href="{% url 'accounts:profile' course.teacher_id %}">{{ course.teacher.get_full_name|default:course.teacher.username }}</a></p>
+    <div class="course-description">{{ course.description|linebreaksbr }}</div>
+{% endblock %}
