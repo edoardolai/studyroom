@@ -103,3 +103,16 @@ class Notification(models.Model):
 
     def __str__(self):
         return self.message
+
+
+class ChatMessage(models.Model):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="chat_messages")
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="chat_messages")
+    body = models.CharField(max_length=1000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+
+    def __str__(self):
+        return f"{self.author}: {self.body[:50]}"

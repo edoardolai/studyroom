@@ -15,12 +15,7 @@ from accounts.models import User
 from .forms import CourseForm, FeedbackForm, MaterialForm
 from .models import Course, CourseMaterial, Enrolment, Feedback, Notification
 from .tasks import queue_material_notification
-
-
-def can_view_materials(user, course):
-    if user.role == User.Role.TEACHER:
-        return course.teacher_id == user.pk
-    return course.enrolments.filter(student=user, is_blocked=False).exists()
+from .permissions import can_access_course
 
 
 @login_required
@@ -35,7 +30,7 @@ def course_list(request):
 @require_safe
 def course_detail(request, pk):
     course = get_object_or_404(Course.objects.select_related("teacher"), pk=pk)
-    has_access = can_view_materials(request.user, course)
+    has_access = can_access_course(request.user, course)
     enrolled = request.user.role == User.Role.STUDENT and has_access
     blocked = course.enrolments.filter(student=request.user, is_blocked=True).exists()
     materials = course.materials.all() if has_access else CourseMaterial.objects.none()
@@ -159,7 +154,7 @@ def material_upload(request, pk):
 @never_cache
 def material_download(request, pk):
     material = get_object_or_404(CourseMaterial.objects.select_related("course"), pk=pk)
-    if not can_view_materials(request.user, material.course):
+    if not can_access_course(request.user, material.course):
         raise PermissionDenied
     try:
         file = material.file.open("rb")
@@ -172,7 +167,7 @@ def material_download(request, pk):
 @require_http_methods(["GET", "POST"])
 def feedback_edit(request, pk):
     course = get_object_or_404(Course, pk=pk)
-    if request.user.role != User.Role.STUDENT or not can_view_materials(request.user, course):
+    if request.user.role != User.Role.STUDENT or not can_access_course(request.user, course):
         raise PermissionDenied
     feedback = Feedback.objects.filter(course=course, student=request.user).first()
     if request.method == "POST":
