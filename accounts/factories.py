@@ -1,6 +1,6 @@
 import factory
 
-from .models import User
+from .models import StatusUpdate, User
 
 
 class UserFactory(factory.django.DjangoModelFactory):
@@ -13,3 +13,11 @@ class UserFactory(factory.django.DjangoModelFactory):
     email = factory.LazyAttribute(lambda user: f"{user.username}@example.com")
     # Login tests need a hashed password, just like a registered account.
     password = factory.django.Password("River-stone-482!")
+
+
+class StatusUpdateFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = StatusUpdate
+
+    author = factory.SubFactory(UserFactory)
+    body = factory.Sequence(lambda n: f"Study update {n}")

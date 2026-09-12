@@ -4,11 +4,11 @@ from tempfile import TemporaryDirectory
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 from PIL import Image
 
-from .factories import UserFactory
-from .models import User
+from .factories import StatusUpdateFactory, UserFactory
+from .models import StatusUpdate, User
 
 
 class ProfileTests(APITestCase):
@@ -232,3 +232,121 @@ class ProfilePhotoTests(APITestCase):
         self.client.force_login(self.teacher)
         response = self.client.get(reverse("accounts:profile-photo", args=[self.student.pk]))
         self.assertEqual(response.status_code, 404)
+
+
+class StatusUpdateTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.student = UserFactory()
+        cls.teacher = UserFactory(role=User.Role.TEACHER)
+
+    def test_both_roles_can_post_on_their_home_page(self):
+        for user in (self.student, self.teacher):
+            with self.subTest(role=user.role):
+                self.client.force_login(user)
+                response = self.client.post(reverse("accounts:status-add"), {
+                    "body": "Finished today's reading.",
+                })
+                self.assertRedirects(response, reverse("accounts:profile", args=[user.pk]))
+                self.assertEqual(user.status_updates.get().body, "Finished today's reading.")
+
+    def test_submitted_author_is_ignored(self):
+        self.client.force_login(self.student)
+        self.client.post(reverse("accounts:status-add"), {
+            "body": "My own update.", "author": self.teacher.pk,
+        })
+        self.assertEqual(StatusUpdate.objects.get().author, self.student)
+        self.assertFalse(self.teacher.status_updates.exists())
+
+    def test_status_form_only_appears_on_own_page(self):
+        self.client.force_login(self.student)
+        own = self.client.get(reverse("accounts:profile", args=[self.student.pk]))
+        other = self.client.get(reverse("accounts:profile", args=[self.teacher.pk]))
+        self.assertContains(own, reverse("accounts:status-add"))
+        self.assertNotContains(other, reverse("accounts:status-add"))
+
+    def test_blank_and_long_updates_are_rejected(self):
+        self.client.force_login(self.student)
+        for body in ("", "   \n ", "x" * 501):
+            with self.subTest(length=len(body)):
+                response = self.client.post(reverse("accounts:status-add"), {"body": body})
+                self.assertIn("body", response.context["form"].errors)
+                self.assertEqual(response.context["member"], self.student)
+                self.assertFalse(StatusUpdate.objects.exists())
+
+    def test_500_character_update_is_accepted(self):
+        self.client.force_login(self.student)
+        response = self.client.post(reverse("accounts:status-add"), {"body": "x" * 500})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(StatusUpdate.objects.get().body), 500)
+
+    def test_anonymous_user_cannot_post(self):
+        response = self.client.post(reverse("accounts:status-add"), {"body": "Hello"})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(StatusUpdate.objects.exists())
+
+    def test_get_request_cannot_post(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("accounts:status-add"), {"body": "Hello"})
+        self.assertEqual(response.status_code, 405)
+        self.assertFalse(StatusUpdate.objects.exists())
+
+    def test_profile_lists_only_its_authors_updates_newest_first(self):
+        older = StatusUpdateFactory(author=self.student, body="First update.")
+        newer = StatusUpdateFactory(author=self.student, body="Second update.")
+        other = StatusUpdateFactory(author=self.teacher, body="Teacher's update.")
+        self.client.force_login(self.teacher)
+        response = self.client.get(reverse("accounts:profile", args=[self.student.pk]))
+        self.assertEqual(list(response.context["page"]), [newer, older])
+        self.assertNotContains(response, other.body)
+
+    def test_status_html_is_escaped(self):
+        StatusUpdateFactory(author=self.student, body="<script>alert('hello')</script>")
+        self.client.force_login(self.teacher)
+        response = self.client.get(reverse("accounts:profile", args=[self.student.pk]))
+        self.assertNotContains(response, "<script>")
+        self.assertContains(response, "&lt;script&gt;")
+
+    def test_history_is_paginated(self):
+        updates = StatusUpdateFactory.create_batch(12, author=self.student)
+        self.client.force_login(self.teacher)
+        url = reverse("accounts:profile", args=[self.student.pk])
+        first = self.client.get(url)
+        second = self.client.get(url, {"page": 2})
+        self.assertEqual(list(first.context["page"]), list(reversed(updates[2:])))
+        self.assertEqual(list(second.context["page"]), list(reversed(updates[:2])))
+
+    def test_invalid_post_keeps_existing_updates_visible(self):
+        update = StatusUpdateFactory(author=self.student)
+        self.client.force_login(self.student)
+        response = self.client.post(reverse("accounts:status-add"), {"body": ""})
+        self.assertEqual(list(response.context["page"]), [update])
+
+    def test_deleting_author_removes_their_updates_only(self):
+        StatusUpdateFactory(author=self.student)
+        other = StatusUpdateFactory(author=self.teacher)
+        self.student.delete()
+        self.assertEqual(list(StatusUpdate.objects.all()), [other])
+
+
+class ProfileCsrfTests(APITestCase):
+    def test_profile_edits_and_status_posts_require_csrf(self):
+        user = UserFactory()
+        client = APIClient(enforce_csrf_checks=True)
+        client.force_login(user)
+        cases = [
+            ("accounts:profile-edit", {"first_name": "Alex", "last_name": "Wood"}),
+            ("accounts:status-add", {"body": "A new update."}),
+        ]
+        for name, data in cases:
+            with self.subTest(route=name):
+                response = client.post(reverse(name), data)
+                self.assertEqual(response.status_code, 403)
+                client.get(reverse("accounts:profile-edit"))
+                response = client.post(reverse(name), {
+                    **data, "csrfmiddlewaretoken": client.cookies["csrftoken"].value,
+                })
+                self.assertEqual(response.status_code, 302)
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, "Alex")
+        self.assertEqual(user.status_updates.get().body, "A new update.")

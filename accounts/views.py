@@ -5,9 +5,9 @@ from django.core.paginator import Paginator
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_http_methods, require_safe
+from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
-from .forms import ProfileForm, RegistrationForm
+from .forms import ProfileForm, RegistrationForm, StatusUpdateForm
 from .models import User
 
 
@@ -51,7 +51,10 @@ def member_list(request):
 @require_safe
 def profile(request, pk):
     member = get_object_or_404(User, pk=pk, is_active=True)
-    return render(request, "accounts/profile.html", {"member": member})
+    page = Paginator(member.status_updates.all(), 10).get_page(request.GET.get("page"))
+    return render(request, "accounts/profile.html", {
+        "member": member, "page": page, "form": StatusUpdateForm(),
+    })
 
 
 @login_required
@@ -82,3 +85,20 @@ def profile_photo(request, pk):
     except FileNotFoundError as error:
         raise Http404 from error
     return FileResponse(photo)
+
+
+@login_required
+@require_POST
+def status_add(request):
+    form = StatusUpdateForm(request.POST)
+    if form.is_valid():
+        update = form.save(commit=False)
+        # The author comes from the session, never from submitted form fields.
+        update.author = request.user
+        update.save()
+        messages.success(request, "Status posted.")
+        return redirect("accounts:profile", pk=request.user.pk)
+    page = Paginator(request.user.status_updates.all(), 10).get_page(1)
+    return render(request, "accounts/profile.html", {
+        "member": request.user, "page": page, "form": form,
+    })

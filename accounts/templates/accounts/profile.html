@@ -15,4 +15,34 @@
     {% if user.pk == member.pk %}
         <p><a href="{% url 'accounts:profile-edit' %}">Edit my profile</a></p>
     {% endif %}
+
+    <section aria-labelledby="updates-heading" class="status-updates">
+        <h2 id="updates-heading">Status updates</h2>
+        {% if user.pk == member.pk %}
+            <form method="post" action="{% url 'accounts:status-add' %}" class="account-form">
+                {% csrf_token %}
+                {{ form.as_div }}
+                <button type="submit">Post update</button>
+            </form>
+        {% endif %}
+        {% for update in page %}
+            <article class="status-update">
+                <time datetime="{{ update.created_at|date:'c' }}">{{ update.created_at|date:"j M Y, H:i" }}</time>
+                <p>{{ update.body|linebreaksbr }}</p>
+            </article>
+        {% empty %}
+            <p>No status updates yet.</p>
+        {% endfor %}
+        {% if page.has_other_pages %}
+            <nav aria-label="Status pages">
+                {% if page.has_previous %}
+                    <a href="?page={{ page.previous_page_number }}">Newer updates</a>
+                {% endif %}
+                <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+                {% if page.has_next %}
+                    <a href="?page={{ page.next_page_number }}">Older updates</a>
+                {% endif %}
+            </nav>
+        {% endif %}
+    </section>
 {% endblock %}

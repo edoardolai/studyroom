@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 
-from .models import User
+from .models import StatusUpdate, User
 
 
 class RegistrationForm(UserCreationForm):
@@ -33,3 +33,12 @@ class ProfileForm(forms.ModelForm):
         if data.get("remove_photo") and "photo" in self.files:
             self.add_error("photo", "Choose a new photo or remove the current one, not both.")
         return data
+
+
+class StatusUpdateForm(forms.ModelForm):
+    class Meta:
+        model = StatusUpdate
+        fields = ("body",)
+        labels = {"body": "What's new?"}
+        widgets = {"body": forms.Textarea(attrs={"rows": 3})}
+        help_texts = {"body": "Up to 500 characters. Visible to other members."}

@@ -17,4 +17,5 @@ urlpatterns = [
     path("members/<int:pk>/", views.profile, name="profile"),
     path("members/<int:pk>/photo/", views.profile_photo, name="profile-photo"),
     path("accounts/profile/edit/", views.profile_edit, name="profile-edit"),
+    path("accounts/status/", views.status_add, name="status-add"),
 ]
