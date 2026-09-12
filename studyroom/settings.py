@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "accounts.apps.AccountsConfig",
     "courses.apps.CoursesConfig",
     "rest_framework",
+    "drf_spectacular",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -145,3 +146,11 @@ CELERY_TASK_DEFAULT_QUEUE = "studyroom"
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_TASK_PUBLISH_RETRY = False
 CELERY_BROKER_CONNECTION_TIMEOUT = 2
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
