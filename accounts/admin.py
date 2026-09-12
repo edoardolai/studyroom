@@ -8,7 +8,7 @@ from .models import User
 class AccountAdmin(UserAdmin):
     fieldsets = UserAdmin.fieldsets + (
         ("Account role", {"fields": ("role",)}),
-        ("Profile", {"fields": ("biography",)}),
+        ("Profile", {"fields": ("biography", "photo")}),
     )
     add_fieldsets = UserAdmin.add_fieldsets + (("Account role", {"fields": ("role",)}),)
     list_display = ("username", "first_name", "last_name", "role", "is_staff")

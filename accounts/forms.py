@@ -18,8 +18,18 @@ class RegistrationForm(UserCreationForm):
 class ProfileForm(forms.ModelForm):
     first_name = forms.CharField(max_length=150)
     last_name = forms.CharField(max_length=150)
+    remove_photo = forms.BooleanField(required=False)
 
     class Meta:
         model = User
-        fields = ("first_name", "last_name", "biography")
-        widgets = {"biography": forms.Textarea(attrs={"rows": 4})}
+        fields = ("first_name", "last_name", "biography", "photo")
+        widgets = {
+            "biography": forms.Textarea(attrs={"rows": 4}),
+            "photo": forms.FileInput(attrs={"accept": "image/jpeg,image/png"}),
+        }
+
+    def clean(self):
+        data = super().clean()
+        if data.get("remove_photo") and "photo" in self.files:
+            self.add_error("photo", "Choose a new photo or remove the current one, not both.")
+        return data

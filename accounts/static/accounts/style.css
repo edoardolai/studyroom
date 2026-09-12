@@ -52,3 +52,5 @@ textarea {
     resize: vertical;
 }
 .profile-bio { max-width: 42rem; overflow-wrap: anywhere; }
+.profile-photo { object-fit: cover; border-radius: 50%; }
+input[type="checkbox"] { width: auto; }

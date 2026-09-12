@@ -1,6 +1,10 @@
 {% extends "accounts/base.html" %}
 {% block title %}{{ member.username }} | Studyroom{% endblock %}
 {% block content %}
+    {% if member.photo %}
+        <img class="profile-photo" src="{% url 'accounts:profile-photo' member.pk %}"
+             alt="Profile photo of {{ member.get_full_name|default:member.username }}" width="128" height="128">
+    {% endif %}
     <h1>{{ member.get_full_name|default:member.username }}</h1>
     <p>@{{ member.username }} · {{ member.get_role_display }}</p>
     {% if member.biography %}

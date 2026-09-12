@@ -1,5 +1,11 @@
+from io import BytesIO
+from tempfile import TemporaryDirectory
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
+from PIL import Image
 
 from .factories import UserFactory
 from .models import User
@@ -104,3 +110,125 @@ class ProfileTests(APITestCase):
         first_ids = {user.pk for user in first.context["page"]}
         second_ids = {user.pk for user in second.context["page"]}
         self.assertFalse(first_ids & second_ids)
+
+
+class ProfilePhotoTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.student = UserFactory()
+        cls.teacher = UserFactory(role=User.Role.TEACHER)
+
+    def setUp(self):
+        # Uploaded test files should never end up in the real media folder.
+        folder = TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        settings = override_settings(MEDIA_ROOT=folder.name)
+        settings.enable()
+        self.addCleanup(settings.disable)
+        self.client.force_login(self.student)
+
+    def photo(self, name="photo.png", format="PNG", size=(16, 16)):
+        output = BytesIO()
+        Image.new("RGB", size, color="green").save(output, format=format)
+        return SimpleUploadedFile(name, output.getvalue(), content_type="image/png")
+
+    def edit(self, **overrides):
+        data = {"first_name": "Jamie", "last_name": "Reed", "biography": "Hello."}
+        data.update(overrides)
+        return self.client.post(reverse("accounts:profile-edit"), data)
+
+    def test_jpeg_and_png_uploads_are_saved_and_served_to_members(self):
+        for name, format in [("photo.png", "PNG"), ("photo.jpg", "JPEG")]:
+            with self.subTest(format=format):
+                upload = self.photo(name=name, format=format)
+                expected = upload.read()
+                upload.seek(0)
+                response = self.edit(photo=upload)
+                self.assertRedirects(response, reverse("accounts:profile", args=[self.student.pk]))
+                self.student.refresh_from_db()
+                self.assertTrue(self.student.photo.storage.exists(self.student.photo.name))
+                self.client.force_login(self.teacher)
+                response = self.client.get(reverse("accounts:profile-photo", args=[self.student.pk]))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("no-store", response.headers["Cache-Control"])
+                self.assertEqual(b"".join(response.streaming_content), expected)
+                self.client.force_login(self.student)
+
+    def test_photo_requires_login_even_with_known_url(self):
+        self.edit(photo=self.photo())
+        self.client.logout()
+        url = reverse("accounts:profile-photo", args=[self.student.pk])
+        self.assertRedirects(self.client.get(url), f"{reverse('accounts:login')}?next={url}")
+
+    def test_raw_media_url_is_not_served(self):
+        self.edit(photo=self.photo())
+        self.student.refresh_from_db()
+        self.assertEqual(self.client.get(self.student.photo.url).status_code, 404)
+
+    def test_renamed_non_image_is_rejected(self):
+        upload = SimpleUploadedFile("photo.png", b"not an image", content_type="image/png")
+        response = self.edit(photo=upload)
+        self.assertIn("photo", response.context["form"].errors)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.photo)
+
+    def test_gif_renamed_as_png_is_rejected(self):
+        response = self.edit(photo=self.photo(format="GIF"))
+        self.assertIn("photo", response.context["form"].errors)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.photo)
+
+    def test_image_with_unsupported_extension_is_rejected(self):
+        response = self.edit(photo=self.photo(name="photo.html"))
+        self.assertIn("photo", response.context["form"].errors)
+
+    def test_oversized_file_is_rejected(self):
+        data = self.photo().read() + b"x" * (2 * 1024 * 1024)
+        response = self.edit(photo=SimpleUploadedFile("large.png", data))
+        self.assertIn("photo", response.context["form"].errors)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.photo)
+
+    def test_oversized_dimensions_are_rejected(self):
+        response = self.edit(photo=self.photo(size=(4097, 1)))
+        self.assertIn("photo", response.context["form"].errors)
+
+    def test_edit_without_upload_keeps_current_photo(self):
+        self.edit(photo=self.photo())
+        self.student.refresh_from_db()
+        name = self.student.photo.name
+        response = self.edit(biography="Changed biography.")
+        self.assertEqual(response.status_code, 302)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.photo.name, name)
+
+    def test_invalid_replacement_keeps_photo_and_other_profile_fields(self):
+        self.edit(photo=self.photo())
+        self.student.refresh_from_db()
+        name = self.student.photo.name
+        response = self.edit(biography="Should not save.", photo=self.photo(format="GIF"))
+        self.assertEqual(response.status_code, 200)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.photo.name, name)
+        self.assertEqual(self.student.biography, "Hello.")
+
+    def test_remove_photo_stops_serving_it(self):
+        self.edit(photo=self.photo())
+        response = self.edit(remove_photo=True)
+        self.assertEqual(response.status_code, 302)
+        self.student.refresh_from_db()
+        self.assertFalse(self.student.photo)
+        response = self.client.get(reverse("accounts:profile-photo", args=[self.student.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_upload_and_remove_together_are_rejected(self):
+        response = self.edit(photo=self.photo(), remove_photo=True)
+        self.assertIn("photo", response.context["form"].errors)
+
+    def test_photo_of_inactive_account_is_not_served(self):
+        self.edit(photo=self.photo())
+        self.student.is_active = False
+        self.student.save()
+        self.client.force_login(self.teacher)
+        response = self.client.get(reverse("accounts:profile-photo", args=[self.student.pk]))
+        self.assertEqual(response.status_code, 404)
