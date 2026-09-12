@@ -4,7 +4,7 @@ from django.db import models
 from django.urls import reverse
 from django.utils.html import format_html
 
-from .models import Course, CourseMaterial, Enrolment
+from .models import Course, CourseMaterial, Enrolment, Feedback
 
 
 @admin.register(Course)
@@ -19,6 +19,13 @@ class EnrolmentAdmin(admin.ModelAdmin):
     list_display = ("student", "course", "enrolled_at")
     search_fields = ("student__username", "course__title")
     readonly_fields = ("enrolled_at",)
+
+
+@admin.register(Feedback)
+class FeedbackAdmin(admin.ModelAdmin):
+    list_display = ("student", "course", "updated_at")
+    search_fields = ("student__username", "course__title")
+    readonly_fields = ("updated_at",)
 
 
 @admin.register(CourseMaterial)

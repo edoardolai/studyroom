@@ -1,7 +1,7 @@
 import factory
 
 from accounts.factories import UserFactory
-from .models import Course, Enrolment
+from .models import Course, Enrolment, Feedback
 
 
 class CourseFactory(factory.django.DjangoModelFactory):
@@ -19,3 +19,12 @@ class EnrolmentFactory(factory.django.DjangoModelFactory):
 
     course = factory.SubFactory(CourseFactory)
     student = factory.SubFactory(UserFactory)
+
+
+class FeedbackFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Feedback
+
+    course = factory.SubFactory(CourseFactory)
+    student = factory.SubFactory(UserFactory)
+    body = "The exercises helped me understand joins."

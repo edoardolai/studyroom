@@ -1,6 +1,6 @@
 from django import forms
 
-from .models import Course, CourseMaterial
+from .models import Course, CourseMaterial, Feedback
 
 
 class CourseForm(forms.ModelForm):
@@ -15,3 +15,11 @@ class MaterialForm(forms.ModelForm):
         model = CourseMaterial
         fields = ("title", "file")
         widgets = {"file": forms.FileInput(attrs={"accept": ".pdf,.jpg,.jpeg,.png"})}
+
+
+class FeedbackForm(forms.ModelForm):
+    class Meta:
+        model = Feedback
+        fields = ("body",)
+        labels = {"body": "Your feedback"}
+        widgets = {"body": forms.Textarea(attrs={"rows": 6})}

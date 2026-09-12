@@ -61,3 +61,26 @@ class CourseMaterial(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class Feedback(models.Model):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="feedback")
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="course_feedback",
+        limit_choices_to={"role": "student"},
+    )
+    body = models.TextField(max_length=2000)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["course", "student"], name="unique_course_feedback"),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.course}"
+
+    def clean(self):
+        if self.student_id and self.student.role != "student":
+            raise ValidationError({"student": "Only students can leave course feedback."})

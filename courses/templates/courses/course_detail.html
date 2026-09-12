@@ -33,15 +33,37 @@
             </ul>
             {% if page.has_other_pages %}
                 <nav aria-label="Material pages">
-                    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Newer materials</a>{% endif %}
+                    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&amp;feedback_page={{ feedback.number }}">Newer materials</a>{% endif %}
                     <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
-                    {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Older materials</a>{% endif %}
+                    {% if page.has_next %}<a href="?page={{ page.next_page_number }}&amp;feedback_page={{ feedback.number }}">Older materials</a>{% endif %}
                 </nav>
             {% endif %}
         {% elif user.role == "student" %}
             <p>Enrol to access this course's materials.</p>
         {% else %}
             <p>Materials are available to this course's teacher and enrolled students.</p>
+        {% endif %}
+    </section>
+    <section aria-labelledby="feedback-heading">
+        <h2 id="feedback-heading">Student feedback</h2>
+        {% if enrolled %}
+            <p><a href="{% url 'courses:feedback-edit' course.pk %}">Write or update your feedback</a></p>
+        {% endif %}
+        {% for entry in feedback %}
+            <article class="course-feedback">
+                <p><a href="{% url 'accounts:profile' entry.student_id %}">{{ entry.student.get_full_name|default:entry.student.username }}</a>
+                    · Updated <time datetime="{{ entry.updated_at|date:'c' }}">{{ entry.updated_at|date:"j M Y, H:i" }}</time></p>
+                <p>{{ entry.body|linebreaksbr }}</p>
+            </article>
+        {% empty %}
+            <p>No feedback yet.</p>
+        {% endfor %}
+        {% if feedback.has_other_pages %}
+            <nav aria-label="Feedback pages">
+                {% if feedback.has_previous %}<a href="?feedback_page={{ feedback.previous_page_number }}&amp;page={{ page.number }}">Newer feedback</a>{% endif %}
+                <span>Page {{ feedback.number }} of {{ feedback.paginator.num_pages }}</span>
+                {% if feedback.has_next %}<a href="?feedback_page={{ feedback.next_page_number }}&amp;page={{ page.number }}">Older feedback</a>{% endif %}
+            </nav>
         {% endif %}
     </section>
 {% endblock %}

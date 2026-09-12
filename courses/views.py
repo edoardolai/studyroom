@@ -10,8 +10,8 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from accounts.models import User
-from .forms import CourseForm, MaterialForm
-from .models import Course, CourseMaterial, Enrolment
+from .forms import CourseForm, FeedbackForm, MaterialForm
+from .models import Course, CourseMaterial, Enrolment, Feedback
 
 
 def can_view_materials(user, course):
@@ -36,8 +36,9 @@ def course_detail(request, pk):
     enrolled = request.user.role == User.Role.STUDENT and has_access
     materials = course.materials.all() if has_access else CourseMaterial.objects.none()
     page = Paginator(materials, 15).get_page(request.GET.get("page"))
+    feedback = Paginator(course.feedback.select_related("student"), 10).get_page(request.GET.get("feedback_page"))
     return render(request, "courses/course_detail.html", {
-        "course": course, "enrolled": enrolled, "has_access": has_access, "page": page,
+        "course": course, "enrolled": enrolled, "has_access": has_access, "page": page, "feedback": feedback,
     })
 
 
@@ -126,3 +127,23 @@ def material_download(request, pk):
     except FileNotFoundError as error:
         raise Http404 from error
     return FileResponse(file, as_attachment=True, filename=Path(material.file.name).name)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def feedback_edit(request, pk):
+    course = get_object_or_404(Course, pk=pk)
+    if request.user.role != User.Role.STUDENT or not can_view_materials(request.user, course):
+        raise PermissionDenied
+    feedback = Feedback.objects.filter(course=course, student=request.user).first()
+    if request.method == "POST":
+        form = FeedbackForm(request.POST, instance=feedback)
+        if form.is_valid():
+            Feedback.objects.update_or_create(
+                course=course, student=request.user, defaults={"body": form.cleaned_data["body"]},
+            )
+            messages.success(request, "Feedback saved.")
+            return redirect("courses:detail", pk=course.pk)
+    else:
+        form = FeedbackForm(instance=feedback)
+    return render(request, "courses/feedback_form.html", {"course": course, "form": form})
