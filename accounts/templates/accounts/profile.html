@@ -19,7 +19,7 @@
 
     {% if courses %}
         <section aria-labelledby="courses-heading">
-            <h2 id="courses-heading">Courses taught</h2>
+            <h2 id="courses-heading">{% if member.role == "teacher" %}Courses taught{% else %}My courses{% endif %}</h2>
             <ul>
                 {% for course in courses %}
                     <li><a href="{% url 'courses:detail' course.pk %}">{{ course.title }}</a></li>

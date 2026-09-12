@@ -9,6 +9,7 @@ from django.views.decorators.http import require_http_methods, require_POST, req
 
 from .forms import ProfileForm, RegistrationForm, StatusUpdateForm
 from .models import User
+from courses.models import Course
 
 
 def index(request):
@@ -51,11 +52,19 @@ def member_list(request):
 @require_safe
 def profile(request, pk):
     member = get_object_or_404(User, pk=pk, is_active=True)
-    page = Paginator(member.status_updates.all(), 10).get_page(request.GET.get("page"))
-    return render(request, "accounts/profile.html", {
-        "member": member, "page": page, "form": StatusUpdateForm(),
-        "courses": member.courses_taught.all()[:5] if member.role == User.Role.TEACHER else [],
-    })
+    context = profile_context(member, request.user, StatusUpdateForm(), request.GET.get("page"))
+    return render(request, "accounts/profile.html", context)
+
+
+def profile_context(member, viewer, form, page_number=1):
+    page = Paginator(member.status_updates.all(), 10).get_page(page_number)
+    courses = Course.objects.none()
+    if member.role == User.Role.TEACHER:
+        courses = member.courses_taught.all()
+    elif member.pk == viewer.pk:
+        # A student's enrolments are only shown on their own home page.
+        courses = Course.objects.filter(enrolments__student=member)
+    return {"member": member, "page": page, "form": form, "courses": courses}
 
 
 @login_required
@@ -99,7 +108,4 @@ def status_add(request):
         update.save()
         messages.success(request, "Status posted.")
         return redirect("accounts:profile", pk=request.user.pk)
-    page = Paginator(request.user.status_updates.all(), 10).get_page(1)
-    return render(request, "accounts/profile.html", {
-        "member": request.user, "page": page, "form": form,
-    })
+    return render(request, "accounts/profile.html", profile_context(request.user, request.user, form))

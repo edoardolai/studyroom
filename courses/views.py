@@ -32,8 +32,8 @@ def course_list(request):
 @require_safe
 def course_detail(request, pk):
     course = get_object_or_404(Course.objects.select_related("teacher"), pk=pk)
-    enrolled = course.enrolments.filter(student=request.user).exists()
     has_access = can_view_materials(request.user, course)
+    enrolled = request.user.role == User.Role.STUDENT and has_access
     materials = course.materials.all() if has_access else CourseMaterial.objects.none()
     page = Paginator(materials, 15).get_page(request.GET.get("page"))
     return render(request, "courses/course_detail.html", {

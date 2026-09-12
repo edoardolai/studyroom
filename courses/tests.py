@@ -70,6 +70,30 @@ class CourseTests(APITestCase):
         self.client.force_login(self.student)
         self.assertEqual(self.client.get(reverse("courses:detail", args=[99999])).status_code, 404)
 
+    def test_creation_requires_csrf(self):
+        client = APIClient(enforce_csrf_checks=True)
+        client.force_login(self.teacher)
+        response = client.post(reverse("courses:create"), {"title": "SQL", "description": "Practice"})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Course.objects.exists())
+
+    def test_course_list_is_paginated(self):
+        courses = CourseFactory.create_batch(13, teacher=self.teacher)
+        self.client.force_login(self.student)
+        first = self.client.get(reverse("courses:list"))
+        second = self.client.get(reverse("courses:list"), {"page": 2})
+        self.assertEqual(len(first.context["page"]), 12)
+        self.assertEqual(len(second.context["page"]), 1)
+        ids = {course.pk for course in first.context["page"]} | {course.pk for course in second.context["page"]}
+        self.assertEqual(ids, {course.pk for course in courses})
+
+    def test_course_text_is_escaped(self):
+        course = CourseFactory(title="<script>title</script>", description="<script>body</script>")
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("courses:detail", args=[course.pk]))
+        self.assertNotContains(response, "<script>")
+        self.assertContains(response, "&lt;script&gt;")
+
 
 class EnrolmentTests(APITestCase):
     @classmethod
@@ -164,3 +188,32 @@ class EnrolmentTests(APITestCase):
         enrolment = Enrolment(course=self.course, student=self.other_course.teacher)
         with self.assertRaises(ValidationError):
             enrolment.full_clean()
+
+
+class CourseHomeTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.course = CourseFactory()
+        cls.student = UserFactory()
+        cls.other_student = UserFactory()
+        EnrolmentFactory(course=cls.course, student=cls.student)
+
+    def test_student_sees_own_courses_on_home_page(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("accounts:profile", args=[self.student.pk]))
+        self.assertEqual(list(response.context["courses"]), [self.course])
+
+    def test_other_members_cannot_see_student_enrolments_on_profile(self):
+        self.client.force_login(self.other_student)
+        response = self.client.get(reverse("accounts:profile", args=[self.student.pk]))
+        self.assertNotContains(response, self.course.title)
+
+    def test_teachers_courses_are_discoverable_on_profile(self):
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("accounts:profile", args=[self.course.teacher_id]))
+        self.assertEqual(list(response.context["courses"]), [self.course])
+
+    def test_invalid_status_post_keeps_course_information(self):
+        self.client.force_login(self.student)
+        response = self.client.post(reverse("accounts:status-add"), {"body": ""})
+        self.assertEqual(list(response.context["courses"]), [self.course])
