@@ -1,6 +1,6 @@
 # Studyroom — CM3035 Final Coursework
 
-> Draft status: accounts and profiles milestones complete. Courses, notifications, chat, REST endpoints and deployment are still pending. This note tracks work remaining and is not part of the submission text.
+> Draft status: accounts, profiles and course enrolment/materials implemented. Feedback, search, moderation, notifications, chat, REST endpoints and deployment are still pending. This note tracks work remaining and is not part of the submission text.
 
 ## 1. Introduction and development approach
 
@@ -9,6 +9,8 @@ Studyroom is an eLearning application being built with Django. The coursework re
 Development started with the project skeleton, then the custom user and migration, registration, and login/logout. The teacher student list provided the first place to test different permissions. The browser pages use Django templates and forms, with views in `views.py` and registration validation in `forms.py`.
 
 The next step added member home pages and biography editing. Photo uploads followed once the editing workflow had ownership tests, then status updates added the first one-to-many relationship. These changes have separate migrations, so existing accounts receive the new optional fields without needing to be recreated.
+
+Courses were built in three steps: creation and browsing, enrolment and rosters, then uploaded materials. This order gave each upload a course to belong to and an established permission rule for downloading it. The course work also exposed a repeated home-page context between normal viewing and an invalid status submission; a small helper now supplies the same course information to both.
 
 ## 2. Accounts and database design
 
@@ -22,7 +24,13 @@ Profile data stays on `User`: a biography of up to 1,000 characters and an optio
 
 Status updates belong in their own table because an account can post many of them. Each `StatusUpdate` stores its author, text and creation time. The author's name is read through the foreign key rather than copied into every update, so a name change does not leave old posts with stale names. Deleting an account cascades to its updates, which have no purpose without their author. The default ordering uses creation time and then primary key, both descending, so updates have a consistent order even when timestamps match.
 
-The ER diagram shows these application fields and their relationship. Django's supporting authentication and session tables are omitted.
+`Course` has one teacher, a title, a description and a creation time. Its teacher uses `PROTECT`: deleting a teacher should not silently remove courses that students have joined. The teacher's name is retrieved through the relationship. Titles are not unique, since different teachers can reasonably offer courses with the same title; URLs identify courses by primary key.
+
+`Enrolment` links a student and a course and records when they joined. A unique constraint on the pair prevents duplicate participation, including writes outside the web form. Keeping the enrolment as a record also leaves a place for the removal and blocking state in the next step. Course and student deletion cascade to their enrolments. Model validation checks the account role for course owners and enrolments; the web views separately enforce the role and assign the account from the session.
+
+`CourseMaterial` stores a title, file path, upload time and course foreign key. The owning teacher is already available through the course, so it does not repeat that account reference. This structure keeps account details, course descriptions and individual materials in their respective tables, while enrolment represents the many-to-many student/course relationship.
+
+The ER diagram shows these application fields and relationships. Django's supporting authentication and session tables are omitted.
 
 ```mermaid
 erDiagram
@@ -48,6 +56,30 @@ erDiagram
         bigint author_id FK
         varchar body "up to 500 characters"
         datetime created_at
+    }
+    USER ||--o{ COURSE : teaches
+    USER ||--o{ ENROLMENT : joins
+    COURSE ||--o{ ENROLMENT : has
+    COURSE ||--o{ COURSE_MATERIAL : contains
+    COURSE {
+        bigint id PK
+        bigint teacher_id FK
+        varchar title
+        text description
+        datetime created_at
+    }
+    ENROLMENT {
+        bigint id PK
+        bigint course_id FK "unique with student_id"
+        bigint student_id FK
+        datetime enrolled_at
+    }
+    COURSE_MATERIAL {
+        bigint id PK
+        bigint course_id FK
+        varchar title
+        varchar file "stored file path"
+        datetime uploaded_at
     }
 ```
 
@@ -75,9 +107,27 @@ Both students and teachers can post updates on their own home page. This covers 
 
 The interface uses a shared template, labelled form fields and a small stylesheet. Members have a direct My home link, while other users' pages show neither the edit link nor the status form. Long text wraps inside the page, and the photo is displayed at a fixed size without stretching its aspect ratio. No JavaScript is needed for these forms.
 
-## 5. Testing
+## 5. Courses, enrolment and materials
 
-The suite has 59 tests: 23 account tests in `accounts/tests.py` and 36 profile, upload and status tests in `accounts/test_profiles.py`. All run with `python manage.py test`. They use DRF's `APITestCase` and factory_boy, following the test structure from my midterm. The routes tested here return HTML. Factories provide predictable names and passwords, and each test overrides the values relevant to its case. The factory's `Password` helper hashes the test password so the login tests exercise real authentication.
+Members can browse course descriptions before joining. Teachers create courses through a `ModelForm` exposing only title and description; the view assigns the teacher. Students enrol with a CSRF-protected POST. `get_or_create` and the unique database constraint make a repeated submission return the existing enrolment instead of creating another one. My courses shows the teacher's own courses or the student's enrolments, depending on role.
+
+The roster view checks that the requester is a teacher and retrieves the course filtered by that teacher. A different teacher cannot get a roster by changing the URL. Even enrolled students cannot open the roster. On home pages, teachers' courses are discoverable, while a student's enrolments are shown only to that student. These are different views of the same course relationships, rather than separately stored lists.
+
+Materials are uploaded by the course teacher. The form accepts a title and file, and the course comes from the authorised URL lookup rather than a submitted field. Downloads check the same owner/enrolment rule used to show the material list. Knowing a material ID or storage path is insufficient to retrieve it. The response sends the file as an attachment and disables caching. Course descriptions remain visible to unenrolled members, but material titles and links do not.
+
+I used Pillow for JPEG/PNG checks and added `pypdf` to read PDF structure, rather than treating a `.pdf` extension as proof of a valid document. The PDF reader uses strict mode and requires an unencrypted document with at least one page [4]. Images must match their extension and fit within 4096 by 4096 pixels. All materials have a 10 MB limit. These checks reject unsupported, malformed and oversized uploads; they are not malware scanning. Strict PDF parsing can also reject a damaged document that a viewer would repair, so the user may need to export a clean copy.
+
+Course logic lives in the `courses` app. The HTML views remain short functions; the shared `can_view_materials` helper prevents the course page and download endpoint from making different permission decisions. Course lists, rosters and materials are paginated. `select_related` retrieves teacher/student details with the corresponding rows rather than issuing another query for each displayed name.
+
+## 6. Photo cleanup
+
+The first upload implementation left replaced photos on disk. During the file-handling work I added cleanup using user-model signals, so it also covers admin saves and queryset deletion. Before a save, the previous file name is remembered; after a successful save, a changed reference schedules cleanup. Account deletion schedules the same check.
+
+Deletion uses `transaction.on_commit`: if a database transaction rolls back, its deletion callback is discarded [5]. Before deleting a file, the callback checks whether any account still references its name. This protects a shared file and leaves unrelated users' uploads alone. Cleanup errors are logged through the robust callback option, so a storage failure does not make an already-saved profile look like a failed edit. Direct queryset updates bypass these save signals and should not be used to replace photos.
+
+## 7. Testing
+
+The suite has 108 tests across account, profile, photo-cleanup, course and material test files. All run with `python manage.py test`. They use DRF's `APITestCase` and factory_boy, following the test structure from my midterm. The routes tested here return HTML. Factories provide predictable names and passwords, and each test overrides the values relevant to its case. The factory's `Password` helper hashes the test password so the login tests exercise real authentication.
 
 Registration tests check stored names and email, password hashing, duplicate usernames, missing fields and invalid passwords. A tampered request includes a teacher role and both admin flags, then checks that the resulting account is still an ordinary student. Authentication tests cover both roles, incorrect credentials, inactive accounts, permitted local redirects and rejection of an external redirect. Logout tests check that GET does not end the session and that POST does.
 
@@ -87,11 +137,15 @@ Profile tests submit another account's ID and privileged fields to the editing r
 
 Status tests check both roles, a forged author, blank and overlong input, the 500-character boundary, escaped HTML, history ordering, pagination and deletion of an author. Separate CSRF checks exercise profile editing and status posting with enforcement enabled.
 
-All 59 tests passed after the profiles milestone, including a check that the admin uses the correct photo link. Django's system check passed, and `makemigrations --check --dry-run` reported no missing migrations. HTTP checks against the running server confirmed student and teacher login, member browsing, home pages and editing pages. The student received 403 on the teacher list, while the teacher received 200; an anonymous member-directory request redirected to login. These checks exercise server responses, not a visual browser review or concurrent traffic.
+Course tests cover forged owner/student fields, duplicate enrolment at both HTTP and database levels, teacher/student restrictions, isolated rosters and home-page course visibility. Material tests check valid PDFs/images, malformed files, misleading extensions, encrypted PDFs, size limits and complete download bytes. They also test direct requests from outsiders and loss of download access after an enrolment is deleted.
 
-## 6. Current local setup
+Photo cleanup tests execute captured commit callbacks to verify replacement, removal and account deletion. Other cases roll back an edit, update an unrelated field, submit an invalid form or share a file between two accounts. The expected result is checked on storage as well as in the database. All 108 tests passed after these changes. Django's system check passed, and migration checks remain part of each schema change.
 
-The project uses a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3 and Pillow 12.3.0. Pillow was added with photo uploads. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Exact release dependencies will be captured in `requirements.txt` for the clean-install rehearsal.
+A Chrome walkthrough exercised course creation, PDF upload, student enrolment, downloading and the teacher roster. A separate student account received HTTP 403 when requesting the file directly without enrolment. Desktop and mobile screenshots were inspected, and layout checks covered widths of 320 and 390 pixels. A 150-character title without spaces caused horizontal scrolling on mobile; allowing the heading to wrap fixed it. This is a focused browser check, not a complete accessibility or cross-browser audit.
+
+## 8. Current local setup
+
+The project uses a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0 and pypdf 6.18.1. Pillow was added with photo uploads and pypdf with course materials. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Exact release dependencies will be captured in `requirements.txt` for the clean-install rehearsal.
 
 From the project directory, activate the existing local environment and run:
 
@@ -105,6 +159,10 @@ Open `http://127.0.0.1:8000/`. Registration is at `/accounts/register/`, login a
 
 After login, Members opens `/members/` and My home opens the current user's `/members/<id>/` page. Edit my profile allows name, biography and photo changes; the status form is on the home page. Log in as another member to see the shared information without editing controls. Uploaded photos are stored in `media/profiles/`, which is excluded from Git but must be preserved when copying the populated application.
 
+Courses opens `/courses/`; My courses opens `/courses/mine/`. A teacher can create a course, then upload its materials and view its roster from the detail page. A student sees an Enrol button until they have joined, after which the materials become available. Course files are stored in `media/course_materials/` and must also be included when copying the populated application.
+
+The demo course, Database practice, belongs to morgan and contains a sample PDF called Week one exercise. alex is enrolled; sam is not, allowing both download permission cases to be tried.
+
 The local database currently contains these demonstration accounts:
 
 | Username | Account |
@@ -116,7 +174,7 @@ The local database currently contains these demonstration accounts:
 
 Their local demonstration password is `Studyroom-demo-482!`. They were created through Django's user model, with `set_password` used to store hashed passwords. A repeatable loader will be introduced once the course demo data has a settled shape. The database is excluded from Git but will be included, together with the required media, in the submission ZIP. The virtual environment will be excluded from that ZIP.
 
-## 7. Deployment plan
+## 9. Deployment plan
 
 > Planning note: deployment follows integration testing. Compare hosts for ASGI/WebSocket support, Redis, a Celery worker, persistent storage and cost. Record the chosen configuration and verify HTTPS/WSS, permissions, uploads and persistence across restarts. No host has been selected or deployment carried out.
 
@@ -125,8 +183,10 @@ Their local demonstration password is `Studyroom-demo-482!`. They were created t
 1. Django documentation, [Substituting a custom User model](https://docs.djangoproject.com/en/5.2/topics/auth/customizing/#substituting-a-custom-user-model).
 2. Django, [Supported versions](https://www.djangoproject.com/download/#supported-versions).
 3. Django documentation, [File uploads](https://docs.djangoproject.com/en/5.2/topics/http/file-uploads/).
+4. pypdf documentation, [PdfReader](https://pypdf.readthedocs.io/en/stable/modules/PdfReader.html).
+5. Django documentation, [Performing actions after commit](https://docs.djangoproject.com/en/5.2/topics/db/transactions/#performing-actions-after-commit).
 
-## 8. Critical evaluation
+## 10. Critical evaluation
 
 The account foundation reuses Django's password and session handling, leaving a small amount of application-specific code to inspect. The tests demonstrate that the role difference is enforced on a real page and cannot be selected through registration. Using one role field is sufficient for the coursework's two account types, but it would need reconsideration if a person could teach some courses and attend others as a student.
 
@@ -134,4 +194,6 @@ Creating teachers through admin prevents self-assignment of teacher privileges, 
 
 Serving photos through Django keeps member access checks in one place, but makes the web process handle each image request. A larger deployment would need to measure that cost before choosing a different delivery method. Upload limits are validated after Django receives the request; they do not replace request-size limits at the production web server.
 
-Removing or replacing a photo stops the application serving its old reference, but currently leaves the old file on disk. Storage cleanup is therefore still needed. The image is validated but not resized or stripped of metadata. Status updates can be posted and read, but users cannot yet edit or delete individual posts; the admin can manage them. These are concrete limits of the current profile workflow. Course information will give the home pages more value once enrolment is implemented.
+Old profile photos are now deleted after committed replacement/removal, but the database and filesystem are still separate systems: a failed storage operation or a newly uploaded file followed by transaction rollback can leave an orphan. A periodic reconciliation would be useful for a deployed application. Course-material replacement/deletion through admin also leaves its old files on disk; there is no user-facing material replacement workflow yet. Images are validated but not resized or stripped of metadata. Status updates can be posted and read, but users cannot yet edit or delete individual posts; the admin can manage them.
+
+Each course has one teacher and is available for enrolment as soon as it is created. There is no draft/published state, capacity limit or student withdrawal flow. This covers the current coursework workflow with a small schema, but a real teaching service would need to decide those policies. Role checks in model validation do not run on arbitrary ORM saves; the current web paths assign roles and relationships explicitly, while admin changes still require care. SQLite is sufficient for the local demonstration, but the sequential duplicate-enrolment tests do not establish behaviour under concurrent write load.
