@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "courses.apps.CoursesConfig",
     "rest_framework",
     "drf_spectacular",
+    "drf_spectacular_sidecar",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -153,4 +154,13 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Studyroom user API",
+    "DESCRIPTION": "Log in at /accounts/login/ before trying requests. Member profiles are read-only; PATCH /api/users/me/ updates your name and biography.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
 }
