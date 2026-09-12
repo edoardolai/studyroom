@@ -3,6 +3,16 @@
 {% block content %}
     <h1>Members</h1>
     <p>Visit a member's home page to see what they have shared.</p>
+    {% if user.role == "teacher" %}
+        <form method="get" class="account-form" role="search">
+            <div>
+                <label for="member-query">Search students and teachers</label>
+                <input id="member-query" name="q" value="{{ query }}" maxlength="150" placeholder="Name or username">
+            </div>
+            <button type="submit">Search</button>
+            {% if query %}<a href="{% url 'accounts:member-list' %}">Clear search</a>{% endif %}
+        </form>
+    {% endif %}
     <ul class="member-list">
         {% for member in page %}
             <li>
@@ -16,11 +26,11 @@
     {% if page.has_other_pages %}
         <nav aria-label="Member pages">
             {% if page.has_previous %}
-                <a href="?page={{ page.previous_page_number }}">Previous</a>
+                <a href="?q={{ query|urlencode }}&amp;page={{ page.previous_page_number }}">Previous</a>
             {% endif %}
             <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
             {% if page.has_next %}
-                <a href="?page={{ page.next_page_number }}">Next</a>
+                <a href="?q={{ query|urlencode }}&amp;page={{ page.next_page_number }}">Next</a>
             {% endif %}
         </nav>
     {% endif %}

@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
+from django.db.models import Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
@@ -44,8 +45,16 @@ def student_list(request):
 @require_safe
 def member_list(request):
     members = User.objects.filter(is_active=True, is_superuser=False).order_by("username")
+    query = request.GET.get("q", "").strip()[:150]
+    if query:
+        if request.user.role != User.Role.TEACHER:
+            raise PermissionDenied
+        for word in query.split():
+            members = members.filter(
+                Q(username__icontains=word) | Q(first_name__icontains=word) | Q(last_name__icontains=word)
+            )
     page = Paginator(members, 25).get_page(request.GET.get("page"))
-    return render(request, "accounts/member_list.html", {"page": page})
+    return render(request, "accounts/member_list.html", {"page": page, "query": query})
 
 
 @login_required
