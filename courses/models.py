@@ -2,6 +2,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from .validators import validate_material
+
 
 class Course(models.Model):
     teacher = models.ForeignKey(
@@ -43,3 +45,19 @@ class Enrolment(models.Model):
     def clean(self):
         if self.student_id and self.student.role != "student":
             raise ValidationError({"student": "Only students can enrol on a course."})
+
+
+class CourseMaterial(models.Model):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="materials")
+    title = models.CharField(max_length=150)
+    file = models.FileField(
+        upload_to="course_materials/", validators=[validate_material],
+        help_text="PDF, JPEG or PNG, up to 10 MB. Images: at most 4096 by 4096 pixels.",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-uploaded_at", "-pk"]
+
+    def __str__(self):
+        return self.title

@@ -17,4 +17,31 @@
     {% elif course.teacher_id == user.pk %}
         <p><a href="{% url 'courses:roster' course.pk %}">View enrolled students</a></p>
     {% endif %}
+    <section aria-labelledby="materials-heading">
+        <h2 id="materials-heading">Course materials</h2>
+        {% if course.teacher_id == user.pk and user.role == "teacher" %}
+            <p><a href="{% url 'courses:material-upload' course.pk %}">Upload material</a></p>
+        {% endif %}
+        {% if has_access %}
+            <ul>
+                {% for material in page %}
+                    <li><a href="{% url 'courses:material-download' material.pk %}">{{ material.title }}</a>
+                        <span>— {{ material.uploaded_at|date:"j M Y" }}</span></li>
+                {% empty %}
+                    <li>No materials uploaded yet.</li>
+                {% endfor %}
+            </ul>
+            {% if page.has_other_pages %}
+                <nav aria-label="Material pages">
+                    {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Newer materials</a>{% endif %}
+                    <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+                    {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Older materials</a>{% endif %}
+                </nav>
+            {% endif %}
+        {% elif user.role == "student" %}
+            <p>Enrol to access this course's materials.</p>
+        {% else %}
+            <p>Materials are available to this course's teacher and enrolled students.</p>
+        {% endif %}
+    </section>
 {% endblock %}
