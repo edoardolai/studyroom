@@ -12,10 +12,25 @@
     <header>
         <nav aria-label="Main navigation">
             <a class="brand" href="{% url 'accounts:index' %}">Studyroom</a>
-            <a href="{% url 'accounts:register' %}">Register</a>
+            {% if user.is_authenticated %}
+                {% if user.role == "teacher" %}
+                    <a href="{% url 'accounts:student-list' %}">Students</a>
+                {% endif %}
+                <span>{{ user.username }} · {{ user.get_role_display }}</span>
+                <form method="post" action="{% url 'accounts:logout' %}">
+                    {% csrf_token %}
+                    <button type="submit">Log out</button>
+                </form>
+            {% else %}
+                <a href="{% url 'accounts:login' %}">Log in</a>
+                <a href="{% url 'accounts:register' %}">Register</a>
+            {% endif %}
         </nav>
     </header>
     <main id="content">
+        {% for message in messages %}
+            <p role="status">{{ message }}</p>
+        {% endfor %}
         {% block content %}{% endblock %}
     </main>
 </body>

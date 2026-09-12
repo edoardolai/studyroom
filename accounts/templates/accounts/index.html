@@ -1,6 +1,15 @@
 {% extends "accounts/base.html" %}
 {% block content %}
-    <h1>Welcome to Studyroom</h1>
-    <p>A place for your courses and conversations.</p>
-    <p><a href="{% url 'accounts:register' %}">Create a student account</a></p>
+    {% if user.is_authenticated %}
+        <h1>Hello, {{ user.first_name|default:user.username }}</h1>
+        <p>You are logged in as a {{ user.get_role_display|lower }}.</p>
+        {% if user.role == "teacher" %}
+            <p><a href="{% url 'accounts:student-list' %}">View student records</a></p>
+        {% endif %}
+    {% else %}
+        <h1>Welcome to Studyroom</h1>
+        <p>A place for your courses and conversations.</p>
+        <p><a href="{% url 'accounts:register' %}">Create a student account</a>
+            or <a href="{% url 'accounts:login' %}">log in</a>.</p>
+    {% endif %}
 {% endblock %}
