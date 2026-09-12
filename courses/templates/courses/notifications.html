@@ -1,0 +1,29 @@
+{% extends "accounts/base.html" %}
+{% block title %}Notifications | Studyroom{% endblock %}
+{% block content %}
+    <h1>Notifications</h1>
+    <p>{{ unread_count }} unread. Refresh this page to check for new notifications.</p>
+    {% for notification in page %}
+        <article class="course-summary">
+            {% if not notification.is_read %}<strong>Unread</strong>{% endif %}
+            <p>{{ notification.message }}</p>
+            <p><time datetime="{{ notification.created_at|date:'c' }}">{{ notification.created_at|date:"j M Y, H:i" }}</time>
+                · <a href="{% url 'courses:detail' notification.course_id %}">View course</a></p>
+            {% if not notification.is_read %}
+                <form method="post" action="{% url 'courses:notification-read' notification.pk %}">
+                    {% csrf_token %}
+                    <button type="submit">Mark as read</button>
+                </form>
+            {% endif %}
+        </article>
+    {% empty %}
+        <p>No notifications yet.</p>
+    {% endfor %}
+    {% if page.has_other_pages %}
+        <nav aria-label="Notification pages">
+            {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Newer</a>{% endif %}
+            <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+            {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Older</a>{% endif %}
+        </nav>
+    {% endif %}
+{% endblock %}

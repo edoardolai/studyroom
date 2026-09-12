@@ -17,6 +17,7 @@
                 <a href="{% url 'accounts:member-list' %}">Members</a>
                 <a href="{% url 'courses:list' %}">Courses</a>
                 <a href="{% url 'courses:mine' %}">My courses</a>
+                <a href="{% url 'courses:notifications' %}">Notifications</a>
                 {% if user.role == "teacher" %}
                     <a href="{% url 'accounts:student-list' %}">Students</a>
                 {% endif %}

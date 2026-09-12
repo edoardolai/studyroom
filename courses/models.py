@@ -85,3 +85,21 @@ class Feedback(models.Model):
     def clean(self):
         if self.student_id and self.student.role != "student":
             raise ValidationError({"student": "Only students can leave course feedback."})
+
+
+class Notification(models.Model):
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="notifications")
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="notifications")
+    material = models.ForeignKey(CourseMaterial, on_delete=models.CASCADE, null=True, blank=True)
+    message = models.CharField(max_length=400)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["recipient", "material"], name="unique_material_notification"),
+        ]
+
+    def __str__(self):
+        return self.message

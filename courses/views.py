@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
@@ -11,7 +12,7 @@ from django.views.decorators.http import require_http_methods, require_POST, req
 
 from accounts.models import User
 from .forms import CourseForm, FeedbackForm, MaterialForm
-from .models import Course, CourseMaterial, Enrolment, Feedback
+from .models import Course, CourseMaterial, Enrolment, Feedback, Notification
 
 
 def can_view_materials(user, course):
@@ -64,6 +65,7 @@ def course_create(request):
 
 @login_required
 @require_POST
+@transaction.atomic
 def enrol(request, pk):
     if request.user.role != User.Role.STUDENT:
         raise PermissionDenied
@@ -72,6 +74,10 @@ def enrol(request, pk):
     if enrolment.is_blocked:
         raise PermissionDenied("You are blocked from enrolling on this course.")
     if created:
+        Notification.objects.create(
+            recipient=course.teacher, course=course,
+            message=f"{request.user.username} enrolled on {course.title}.",
+        )
         messages.success(request, "You are now enrolled.")
     else:
         messages.info(request, "You are already enrolled on this course.")
@@ -177,3 +183,22 @@ def feedback_edit(request, pk):
     else:
         form = FeedbackForm(instance=feedback)
     return render(request, "courses/feedback_form.html", {"course": course, "form": form})
+
+
+@login_required
+@require_safe
+def notification_list(request):
+    notifications = request.user.notifications.select_related("course")
+    page = Paginator(notifications, 20).get_page(request.GET.get("page"))
+    return render(request, "courses/notifications.html", {
+        "page": page, "unread_count": notifications.filter(is_read=False).count(),
+    })
+
+
+@login_required
+@require_POST
+def notification_read(request, pk):
+    notification = get_object_or_404(Notification, pk=pk, recipient=request.user)
+    notification.is_read = True
+    notification.save(update_fields=["is_read"])
+    return redirect("courses:notifications")
