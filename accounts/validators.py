@@ -4,7 +4,7 @@ from PIL import Image
 
 def validate_photo(photo):
     if photo.size > 2 * 1024 * 1024:
-        raise ValidationError("Choose a photo smaller than 2 MB.")
+        raise ValidationError("Choose a photo no larger than 2 MB.")
     try:
         with Image.open(photo) as image:
             if image.format not in ("JPEG", "PNG"):

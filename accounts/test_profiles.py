@@ -233,6 +233,13 @@ class ProfilePhotoTests(APITestCase):
         response = self.client.get(reverse("accounts:profile-photo", args=[self.student.pk]))
         self.assertEqual(response.status_code, 404)
 
+    def test_admin_photo_link_uses_authenticated_route(self):
+        self.edit(photo=self.photo())
+        self.client.force_login(UserFactory(is_staff=True, is_superuser=True))
+        response = self.client.get(reverse("admin:accounts_user_change", args=[self.student.pk]))
+        self.assertContains(response, reverse("accounts:profile-photo", args=[self.student.pk]))
+        self.assertNotContains(response, "/media/profiles/")
+
 
 class StatusUpdateTests(APITestCase):
     @classmethod

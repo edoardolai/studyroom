@@ -7,9 +7,18 @@ erDiagram
         varchar last_name
         varchar email
         varchar role "student or teacher"
+        text biography "optional, up to 1000 characters"
+        varchar photo "optional file path"
         boolean is_active
         boolean is_staff
         boolean is_superuser
         datetime date_joined
         datetime last_login "nullable"
+    }
+    USER ||--o{ STATUS_UPDATE : posts
+    STATUS_UPDATE {
+        bigint id PK
+        bigint author_id FK
+        varchar body "up to 500 characters"
+        datetime created_at
     }
