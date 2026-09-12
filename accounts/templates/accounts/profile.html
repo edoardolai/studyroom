@@ -1,0 +1,14 @@
+{% extends "accounts/base.html" %}
+{% block title %}{{ member.username }} | Studyroom{% endblock %}
+{% block content %}
+    <h1>{{ member.get_full_name|default:member.username }}</h1>
+    <p>@{{ member.username }} · {{ member.get_role_display }}</p>
+    {% if member.biography %}
+        <div class="profile-bio">{{ member.biography|linebreaksbr }}</div>
+    {% else %}
+        <p>No biography yet.</p>
+    {% endif %}
+    {% if user.pk == member.pk %}
+        <p><a href="{% url 'accounts:profile-edit' %}">Edit my profile</a></p>
+    {% endif %}
+{% endblock %}

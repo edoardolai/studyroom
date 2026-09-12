@@ -3,6 +3,7 @@
     {% if user.is_authenticated %}
         <h1>Hello, {{ user.first_name|default:user.username }}</h1>
         <p>You are logged in as a {{ user.get_role_display|lower }}.</p>
+        <p><a href="{% url 'accounts:profile' user.pk %}">Go to my home page</a></p>
         {% if user.role == "teacher" %}
             <p><a href="{% url 'accounts:student-list' %}">View student records</a></p>
         {% endif %}

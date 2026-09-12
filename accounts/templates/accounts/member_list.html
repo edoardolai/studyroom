@@ -1,0 +1,27 @@
+{% extends "accounts/base.html" %}
+{% block title %}Members | Studyroom{% endblock %}
+{% block content %}
+    <h1>Members</h1>
+    <p>Visit a member's home page to see what they have shared.</p>
+    <ul class="member-list">
+        {% for member in page %}
+            <li>
+                <a href="{% url 'accounts:profile' member.pk %}">{{ member.get_full_name|default:member.username }}</a>
+                <span>@{{ member.username }} · {{ member.get_role_display }}</span>
+            </li>
+        {% empty %}
+            <li>No members to show.</li>
+        {% endfor %}
+    </ul>
+    {% if page.has_other_pages %}
+        <nav aria-label="Member pages">
+            {% if page.has_previous %}
+                <a href="?page={{ page.previous_page_number }}">Previous</a>
+            {% endif %}
+            <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+            {% if page.has_next %}
+                <a href="?page={{ page.next_page_number }}">Next</a>
+            {% endif %}
+        </nav>
+    {% endif %}
+{% endblock %}

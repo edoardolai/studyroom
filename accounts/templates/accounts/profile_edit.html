@@ -1,0 +1,12 @@
+{% extends "accounts/base.html" %}
+{% block title %}Edit profile | Studyroom{% endblock %}
+{% block content %}
+    <h1>Edit my profile</h1>
+    <p>Your name and biography are visible to other members. Your email stays private.</p>
+    <form method="post" class="account-form">
+        {% csrf_token %}
+        {{ form.as_div }}
+        <button type="submit">Save profile</button>
+        <a href="{% url 'accounts:profile' user.pk %}">Cancel</a>
+    </form>
+{% endblock %}

@@ -6,7 +6,10 @@ from .models import User
 
 @admin.register(User)
 class AccountAdmin(UserAdmin):
-    fieldsets = UserAdmin.fieldsets + (("Account role", {"fields": ("role",)}),)
+    fieldsets = UserAdmin.fieldsets + (
+        ("Account role", {"fields": ("role",)}),
+        ("Profile", {"fields": ("biography",)}),
+    )
     add_fieldsets = UserAdmin.add_fieldsets + (("Account role", {"fields": ("role",)}),)
     list_display = ("username", "first_name", "last_name", "role", "is_staff")
     list_filter = UserAdmin.list_filter + ("role",)

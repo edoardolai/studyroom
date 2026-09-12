@@ -39,3 +39,16 @@ button {
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: .75rem; border-bottom: 1px solid #d7dfd8; }
 .table-scroll { overflow-x: auto; }
+.member-list { list-style: none; padding: 0; }
+.member-list li { padding: 1rem 0; border-bottom: 1px solid #d7dfd8; }
+.member-list span { display: block; color: #4c5b53; }
+textarea {
+    box-sizing: border-box;
+    width: 100%;
+    padding: .65rem;
+    font: inherit;
+    border: 1px solid #87988c;
+    border-radius: .25rem;
+    resize: vertical;
+}
+.profile-bio { max-width: 42rem; overflow-wrap: anywhere; }

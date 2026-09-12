@@ -2,10 +2,10 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.shortcuts import redirect, render
-from django.views.decorators.http import require_safe
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_http_methods, require_safe
 
-from .forms import RegistrationForm
+from .forms import ProfileForm, RegistrationForm
 from .models import User
 
 
@@ -35,3 +35,32 @@ def student_list(request):
     students = User.objects.filter(role=User.Role.STUDENT, is_active=True).order_by("username")
     page = Paginator(students, 25).get_page(request.GET.get("page"))
     return render(request, "accounts/student_list.html", {"page": page})
+
+
+@login_required
+@require_safe
+def member_list(request):
+    members = User.objects.filter(is_active=True, is_superuser=False).order_by("username")
+    page = Paginator(members, 25).get_page(request.GET.get("page"))
+    return render(request, "accounts/member_list.html", {"page": page})
+
+
+@login_required
+@require_safe
+def profile(request, pk):
+    member = get_object_or_404(User, pk=pk, is_active=True)
+    return render(request, "accounts/profile.html", {"member": member})
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def profile_edit(request):
+    if request.method == "POST":
+        form = ProfileForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Profile updated.")
+            return redirect("accounts:profile", pk=request.user.pk)
+    else:
+        form = ProfileForm(instance=request.user)
+    return render(request, "accounts/profile_edit.html", {"form": form})

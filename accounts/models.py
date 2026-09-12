@@ -8,6 +8,7 @@ class User(AbstractUser):
         TEACHER = "teacher", "Teacher"
 
     role = models.CharField(max_length=7, choices=Role.choices, default=Role.STUDENT)
+    biography = models.TextField(max_length=1000, blank=True)
 
     class Meta:
         constraints = [
