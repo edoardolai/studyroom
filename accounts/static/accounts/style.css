@@ -1,0 +1,41 @@
+body {
+    margin: 0;
+    color: #24332f;
+    background: #f7f8f5;
+    font: 1rem/1.6 system-ui, sans-serif;
+}
+header { background: white; border-bottom: 1px solid #d7dfd8; }
+nav, main { max-width: 60rem; margin: auto; padding: 1.25rem; }
+nav { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 1.25rem; margin-right: auto; }
+a { color: #236044; }
+h1 { line-height: 1.2; }
+.account-form { max-width: 32rem; }
+.account-form > div { margin-bottom: 1rem; }
+label { display: block; font-weight: 600; }
+input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: .65rem;
+    font: inherit;
+    border: 1px solid #87988c;
+    border-radius: .25rem;
+    background: white;
+}
+button {
+    background: #236044;
+    color: white;
+    border: 0;
+    border-radius: .25rem;
+    padding: .6rem 1rem;
+    font: inherit;
+    cursor: pointer;
+}
+.helptext { font-size: .9rem; color: #4c5b53; }
+.errorlist { color: #a32323; }
+:focus-visible { outline: 3px solid #946000; outline-offset: 3px; }
+.skip-link { position: absolute; top: -5rem; }
+.skip-link:focus { top: 0; background: white; padding: .5rem; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: .75rem; border-bottom: 1px solid #d7dfd8; }
+.table-scroll { overflow-x: auto; }
