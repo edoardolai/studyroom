@@ -25,12 +25,13 @@ SECRET_KEY = "django-insecure-wf@c_h$@epr8nh&e1nee$ge3+dlkkop2t_^d7)*hl^y9nk7*xq
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
 
 
 # Application definition
 
 INSTALLED_APPS = [
+    "daphne",
     "accounts.apps.AccountsConfig",
     "courses.apps.CoursesConfig",
     "rest_framework",
@@ -70,6 +71,14 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "studyroom.wsgi.application"
+ASGI_APPLICATION = "studyroom.asgi.application"
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {"hosts": [("127.0.0.1", 6379)], "prefix": "studyroom-chat"},
+    },
+}
 
 
 # Database
