@@ -8,6 +8,8 @@
     {% if user.role == "student" %}
         {% if enrolled %}
             <p>You are enrolled on this course.</p>
+        {% elif blocked %}
+            <p>You are blocked from this course. Contact the teacher if you think this is a mistake.</p>
         {% else %}
             <form method="post" action="{% url 'courses:enrol' course.pk %}">
                 {% csrf_token %}
@@ -38,6 +40,8 @@
                     {% if page.has_next %}<a href="?page={{ page.next_page_number }}&amp;feedback_page={{ feedback.number }}">Older materials</a>{% endif %}
                 </nav>
             {% endif %}
+        {% elif blocked %}
+            <p>Course materials are unavailable while you are blocked.</p>
         {% elif user.role == "student" %}
             <p>Enrol to access this course's materials.</p>
         {% else %}

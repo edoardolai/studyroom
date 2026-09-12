@@ -16,7 +16,8 @@ class CourseAdmin(admin.ModelAdmin):
 
 @admin.register(Enrolment)
 class EnrolmentAdmin(admin.ModelAdmin):
-    list_display = ("student", "course", "enrolled_at")
+    list_display = ("student", "course", "enrolled_at", "is_blocked")
+    list_filter = ("is_blocked",)
     search_fields = ("student__username", "course__title")
     readonly_fields = ("enrolled_at",)
 

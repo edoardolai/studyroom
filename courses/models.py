@@ -32,6 +32,7 @@ class Enrolment(models.Model):
         limit_choices_to={"role": "student"},
     )
     enrolled_at = models.DateTimeField(auto_now_add=True)
+    is_blocked = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["enrolled_at", "pk"]

@@ -1,0 +1,19 @@
+{% extends "accounts/base.html" %}
+{% block title %}{{ action|capfirst }} student | {{ course.title }}{% endblock %}
+{% block content %}
+    <h1>{{ action|capfirst }} student</h1>
+    <p>{{ enrolment.student.get_full_name|default:enrolment.student.username }} (@{{ enrolment.student.username }}) · {{ course.title }}</p>
+    {% if action == "block" %}
+        <p>This student will lose access to course materials and cannot enrol again until you lift the block.</p>
+    {% elif action == "remove" %}
+        <p>This student will lose access to course materials. They can enrol again; use Block if you want to prevent that.</p>
+    {% else %}
+        <p>This lifts the block. The student will need to enrol again to access the materials.</p>
+    {% endif %}
+    <p>Their account, other courses and existing feedback will be kept.</p>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit">Confirm {{ action }}</button>
+        <a href="{% url 'courses:roster' course.pk %}">Cancel</a>
+    </form>
+{% endblock %}

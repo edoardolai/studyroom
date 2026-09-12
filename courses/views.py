@@ -17,7 +17,7 @@ from .models import Course, CourseMaterial, Enrolment, Feedback
 def can_view_materials(user, course):
     if user.role == User.Role.TEACHER:
         return course.teacher_id == user.pk
-    return course.enrolments.filter(student=user).exists()
+    return course.enrolments.filter(student=user, is_blocked=False).exists()
 
 
 @login_required
@@ -34,11 +34,13 @@ def course_detail(request, pk):
     course = get_object_or_404(Course.objects.select_related("teacher"), pk=pk)
     has_access = can_view_materials(request.user, course)
     enrolled = request.user.role == User.Role.STUDENT and has_access
+    blocked = course.enrolments.filter(student=request.user, is_blocked=True).exists()
     materials = course.materials.all() if has_access else CourseMaterial.objects.none()
     page = Paginator(materials, 15).get_page(request.GET.get("page"))
     feedback = Paginator(course.feedback.select_related("student"), 10).get_page(request.GET.get("feedback_page"))
     return render(request, "courses/course_detail.html", {
-        "course": course, "enrolled": enrolled, "has_access": has_access, "page": page, "feedback": feedback,
+        "course": course, "enrolled": enrolled, "blocked": blocked,
+        "has_access": has_access, "page": page, "feedback": feedback,
     })
 
 
@@ -67,6 +69,8 @@ def enrol(request, pk):
         raise PermissionDenied
     course = get_object_or_404(Course, pk=pk)
     enrolment, created = Enrolment.objects.get_or_create(course=course, student=request.user)
+    if enrolment.is_blocked:
+        raise PermissionDenied("You are blocked from enrolling on this course.")
     if created:
         messages.success(request, "You are now enrolled.")
     else:
@@ -80,7 +84,9 @@ def my_courses(request):
     if request.user.role == User.Role.TEACHER:
         courses = request.user.courses_taught.select_related("teacher")
     else:
-        courses = Course.objects.filter(enrolments__student=request.user).select_related("teacher")
+        courses = Course.objects.filter(
+            enrolments__student=request.user, enrolments__is_blocked=False,
+        ).select_related("teacher")
     page = Paginator(courses, 12).get_page(request.GET.get("page"))
     return render(request, "courses/course_list.html", {"page": page, "heading": "My courses"})
 
@@ -92,8 +98,32 @@ def roster(request, pk):
         raise PermissionDenied
     course = get_object_or_404(Course, pk=pk, teacher=request.user)
     enrolments = course.enrolments.select_related("student").order_by("student__username")
-    page = Paginator(enrolments, 25).get_page(request.GET.get("page"))
-    return render(request, "courses/roster.html", {"course": course, "page": page})
+    page = Paginator(enrolments.filter(is_blocked=False), 25).get_page(request.GET.get("page"))
+    blocked = Paginator(enrolments.filter(is_blocked=True), 25).get_page(request.GET.get("blocked_page"))
+    return render(request, "courses/roster.html", {"course": course, "page": page, "blocked": blocked})
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def student_manage(request, pk, enrolment_id, action):
+    if request.user.role != User.Role.TEACHER:
+        raise PermissionDenied
+    course = get_object_or_404(Course, pk=pk, teacher=request.user)
+    enrolments = course.enrolments.filter(pk=enrolment_id, is_blocked=(action == "unblock"))
+    enrolment = get_object_or_404(enrolments.select_related("student"))
+    if request.method == "POST":
+        if action == "block":
+            enrolments.update(is_blocked=True)
+            messages.success(request, "Student blocked from this course.")
+        else:
+            # Lifting a block lets the student choose whether to enrol again.
+            enrolments.delete()
+            message = "Block lifted. The student can enrol again." if action == "unblock" else "Student removed from this course."
+            messages.success(request, message)
+        return redirect("courses:roster", pk=course.pk)
+    return render(request, "courses/student_confirm.html", {
+        "course": course, "enrolment": enrolment, "action": action,
+    })
 
 
 @login_required

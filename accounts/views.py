@@ -72,7 +72,7 @@ def profile_context(member, viewer, form, page_number=1):
         courses = member.courses_taught.all()
     elif member.pk == viewer.pk:
         # A student's enrolments are only shown on their own home page.
-        courses = Course.objects.filter(enrolments__student=member)
+        courses = Course.objects.filter(enrolments__student=member, enrolments__is_blocked=False)
     return {"member": member, "page": page, "form": form, "courses": courses}
 
 

@@ -5,24 +5,46 @@
     <h1>Enrolled students</h1>
     <div class="table-scroll">
         <table>
-            <thead><tr><th scope="col">Student</th><th scope="col">Enrolled</th></tr></thead>
+            <thead><tr><th scope="col">Student</th><th scope="col">Enrolled</th><th scope="col">Actions</th></tr></thead>
             <tbody>
                 {% for enrolment in page %}
                     <tr>
                         <td><a href="{% url 'accounts:profile' enrolment.student_id %}">{{ enrolment.student.get_full_name|default:enrolment.student.username }}</a></td>
                         <td>{{ enrolment.enrolled_at|date:"j M Y" }}</td>
+                        <td>
+                            <a href="{% url 'courses:student-remove' course.pk enrolment.pk %}">Remove</a>
+                            · <a href="{% url 'courses:student-block' course.pk enrolment.pk %}">Block</a>
+                        </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="2">No students enrolled yet.</td></tr>
+                    <tr><td colspan="3">No students enrolled yet.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
     {% if page.has_other_pages %}
         <nav aria-label="Roster pages">
-            {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Previous</a>{% endif %}
+            {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&amp;blocked_page={{ blocked.number }}">Previous</a>{% endif %}
             <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
-            {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Next</a>{% endif %}
+            {% if page.has_next %}<a href="?page={{ page.next_page_number }}&amp;blocked_page={{ blocked.number }}">Next</a>{% endif %}
+        </nav>
+    {% endif %}
+    <h2>Blocked students</h2>
+    <ul class="member-list">
+        {% for enrolment in blocked %}
+            <li>
+                <a href="{% url 'accounts:profile' enrolment.student_id %}">{{ enrolment.student.get_full_name|default:enrolment.student.username }}</a>
+                · <a href="{% url 'courses:student-unblock' course.pk enrolment.pk %}">Unblock</a>
+            </li>
+        {% empty %}
+            <li>No students blocked.</li>
+        {% endfor %}
+    </ul>
+    {% if blocked.has_other_pages %}
+        <nav aria-label="Blocked student pages">
+            {% if blocked.has_previous %}<a href="?blocked_page={{ blocked.previous_page_number }}&amp;page={{ page.number }}">Previous</a>{% endif %}
+            <span>Page {{ blocked.number }} of {{ blocked.paginator.num_pages }}</span>
+            {% if blocked.has_next %}<a href="?blocked_page={{ blocked.next_page_number }}&amp;page={{ page.number }}">Next</a>{% endif %}
         </nav>
     {% endif %}
 {% endblock %}
