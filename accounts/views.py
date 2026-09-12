@@ -54,6 +54,7 @@ def profile(request, pk):
     page = Paginator(member.status_updates.all(), 10).get_page(request.GET.get("page"))
     return render(request, "accounts/profile.html", {
         "member": member, "page": page, "form": StatusUpdateForm(),
+        "courses": member.courses_taught.all()[:5] if member.role == User.Role.TEACHER else [],
     })
 
 

@@ -1,10 +1,12 @@
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
+from django.db.models.deletion import ProtectedError
 from django.urls import reverse
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 
 from accounts.factories import UserFactory
-from .factories import CourseFactory
-from .models import Course
+from .factories import CourseFactory, EnrolmentFactory
+from .models import Course, Enrolment
 
 
 class CourseTests(APITestCase):
@@ -67,3 +69,98 @@ class CourseTests(APITestCase):
     def test_missing_course_returns_404(self):
         self.client.force_login(self.student)
         self.assertEqual(self.client.get(reverse("courses:detail", args=[99999])).status_code, 404)
+
+
+class EnrolmentTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.course = CourseFactory()
+        cls.student = UserFactory()
+        cls.other_course = CourseFactory()
+
+    def test_student_enrols_themselves_only(self):
+        other = UserFactory()
+        self.client.force_login(self.student)
+        response = self.client.post(reverse("courses:enrol", args=[self.course.pk]), {
+            "student": other.pk, "course": self.other_course.pk,
+        })
+        self.assertRedirects(response, reverse("courses:detail", args=[self.course.pk]))
+        enrolment = Enrolment.objects.get()
+        self.assertEqual(enrolment.student, self.student)
+        self.assertEqual(enrolment.course, self.course)
+
+    def test_repeated_enrolment_does_not_duplicate_row(self):
+        self.client.force_login(self.student)
+        url = reverse("courses:enrol", args=[self.course.pk])
+        self.client.post(url)
+        self.assertEqual(self.client.post(url).status_code, 302)
+        self.assertEqual(Enrolment.objects.count(), 1)
+
+    def test_database_rejects_duplicate_enrolment(self):
+        EnrolmentFactory(course=self.course, student=self.student)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                Enrolment.objects.create(course=self.course, student=self.student)
+
+    def test_teachers_cannot_enrol(self):
+        for teacher in (self.course.teacher, self.other_course.teacher):
+            with self.subTest(teacher=teacher.pk):
+                self.client.force_login(teacher)
+                response = self.client.post(reverse("courses:enrol", args=[self.course.pk]))
+                self.assertEqual(response.status_code, 403)
+        self.assertFalse(Enrolment.objects.exists())
+
+    def test_enrolment_requires_login_and_post(self):
+        url = reverse("courses:enrol", args=[self.course.pk])
+        self.assertEqual(self.client.post(url).status_code, 302)
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get(url).status_code, 405)
+        self.assertFalse(Enrolment.objects.exists())
+
+    def test_enrolment_requires_csrf(self):
+        client = APIClient(enforce_csrf_checks=True)
+        client.force_login(self.student)
+        url = reverse("courses:enrol", args=[self.course.pk])
+        self.assertEqual(client.post(url).status_code, 403)
+        self.assertFalse(Enrolment.objects.exists())
+        client.get(reverse("courses:detail", args=[self.course.pk]))
+        response = client.post(url, {"csrfmiddlewaretoken": client.cookies["csrftoken"].value})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(Enrolment.objects.count(), 1)
+
+    def test_teacher_cannot_view_another_roster(self):
+        self.client.force_login(self.other_course.teacher)
+        response = self.client.get(reverse("courses:roster", args=[self.course.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_even_enrolled_student_cannot_view_roster(self):
+        EnrolmentFactory(course=self.course, student=self.student)
+        self.client.force_login(self.student)
+        response = self.client.get(reverse("courses:roster", args=[self.course.pk]))
+        self.assertEqual(response.status_code, 403)
+
+    def test_teacher_roster_contains_only_own_course_students(self):
+        enrolment = EnrolmentFactory(course=self.course, student=self.student)
+        EnrolmentFactory(course=self.other_course)
+        self.client.force_login(self.course.teacher)
+        response = self.client.get(reverse("courses:roster", args=[self.course.pk]))
+        self.assertEqual(list(response.context["page"]), [enrolment])
+        self.assertNotContains(response, self.student.email)
+
+    def test_my_courses_matches_each_role(self):
+        EnrolmentFactory(course=self.course, student=self.student)
+        for user in (self.student, self.course.teacher):
+            with self.subTest(role=user.role):
+                self.client.force_login(user)
+                response = self.client.get(reverse("courses:mine"))
+                self.assertEqual(list(response.context["page"]), [self.course])
+
+    def test_course_owner_cannot_be_deleted_while_course_exists(self):
+        with self.assertRaises(ProtectedError):
+            self.course.teacher.delete()
+        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
+
+    def test_enrolment_model_rejects_teacher_as_student(self):
+        enrolment = Enrolment(course=self.course, student=self.other_course.teacher)
+        with self.assertRaises(ValidationError):
+            enrolment.full_clean()

@@ -5,4 +5,16 @@
     <h1>{{ course.title }}</h1>
     <p>Teacher: <a href="{% url 'accounts:profile' course.teacher_id %}">{{ course.teacher.get_full_name|default:course.teacher.username }}</a></p>
     <div class="course-description">{{ course.description|linebreaksbr }}</div>
+    {% if user.role == "student" %}
+        {% if enrolled %}
+            <p>You are enrolled on this course.</p>
+        {% else %}
+            <form method="post" action="{% url 'courses:enrol' course.pk %}">
+                {% csrf_token %}
+                <button type="submit">Enrol on this course</button>
+            </form>
+        {% endif %}
+    {% elif course.teacher_id == user.pk %}
+        <p><a href="{% url 'courses:roster' course.pk %}">View enrolled students</a></p>
+    {% endif %}
 {% endblock %}

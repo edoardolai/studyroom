@@ -21,3 +21,25 @@ class Course(models.Model):
     def clean(self):
         if self.teacher_id and self.teacher.role != "teacher":
             raise ValidationError({"teacher": "The course owner must be a teacher."})
+
+
+class Enrolment(models.Model):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="enrolments")
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="enrolments",
+        limit_choices_to={"role": "student"},
+    )
+    enrolled_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["enrolled_at", "pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["course", "student"], name="unique_course_student"),
+        ]
+
+    def __str__(self):
+        return f"{self.student} — {self.course}"
+
+    def clean(self):
+        if self.student_id and self.student.role != "student":
+            raise ValidationError({"student": "Only students can enrol on a course."})

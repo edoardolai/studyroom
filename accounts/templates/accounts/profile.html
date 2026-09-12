@@ -14,6 +14,18 @@
     {% endif %}
     {% if user.pk == member.pk %}
         <p><a href="{% url 'accounts:profile-edit' %}">Edit my profile</a></p>
+        <p><a href="{% url 'courses:mine' %}">My courses</a></p>
+    {% endif %}
+
+    {% if courses %}
+        <section aria-labelledby="courses-heading">
+            <h2 id="courses-heading">Courses taught</h2>
+            <ul>
+                {% for course in courses %}
+                    <li><a href="{% url 'courses:detail' course.pk %}">{{ course.title }}</a></li>
+                {% endfor %}
+            </ul>
+        </section>
     {% endif %}
 
     <section aria-labelledby="updates-heading" class="status-updates">

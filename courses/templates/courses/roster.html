@@ -1,0 +1,28 @@
+{% extends "accounts/base.html" %}
+{% block title %}Enrolled students | {{ course.title }}{% endblock %}
+{% block content %}
+    <p><a href="{% url 'courses:detail' course.pk %}">{{ course.title }}</a></p>
+    <h1>Enrolled students</h1>
+    <div class="table-scroll">
+        <table>
+            <thead><tr><th scope="col">Student</th><th scope="col">Enrolled</th></tr></thead>
+            <tbody>
+                {% for enrolment in page %}
+                    <tr>
+                        <td><a href="{% url 'accounts:profile' enrolment.student_id %}">{{ enrolment.student.get_full_name|default:enrolment.student.username }}</a></td>
+                        <td>{{ enrolment.enrolled_at|date:"j M Y" }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="2">No students enrolled yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% if page.has_other_pages %}
+        <nav aria-label="Roster pages">
+            {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">Previous</a>{% endif %}
+            <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+            {% if page.has_next %}<a href="?page={{ page.next_page_number }}">Next</a>{% endif %}
+        </nav>
+    {% endif %}
+{% endblock %}
