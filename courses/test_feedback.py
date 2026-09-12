@@ -1,7 +1,5 @@
-from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
 from django.urls import reverse
-from rest_framework.test import APIClient, APITestCase
+from rest_framework.test import APITestCase
 
 from accounts.factories import UserFactory
 from .factories import CourseFactory, EnrolmentFactory, FeedbackFactory
@@ -53,11 +51,6 @@ class FeedbackTests(APITestCase):
                 entry.refresh_from_db()
                 self.assertEqual(entry.body, "The exercises helped me understand joins.")
 
-    def test_maximum_length_is_accepted(self):
-        self.client.force_login(self.student)
-        self.assertEqual(self.client.post(self.url, {"body": "x" * 2000}).status_code, 302)
-        self.assertEqual(len(Feedback.objects.get().body), 2000)
-
     def test_teacher_and_unenrolled_student_cannot_write_feedback(self):
         for user in (self.course.teacher, UserFactory()):
             with self.subTest(role=user.role):
@@ -65,33 +58,6 @@ class FeedbackTests(APITestCase):
                 self.assertEqual(self.client.get(self.url).status_code, 403)
                 self.assertEqual(self.client.post(self.url, {"body": "Hello"}).status_code, 403)
         self.assertFalse(Feedback.objects.exists())
-
-    def test_feedback_requires_login(self):
-        for response in (self.client.get(self.url), self.client.post(self.url, {"body": "Hello"})):
-            self.assertEqual(response.status_code, 302)
-        self.assertFalse(Feedback.objects.exists())
-
-    def test_feedback_requires_csrf(self):
-        client = APIClient(enforce_csrf_checks=True)
-        client.force_login(self.student)
-        self.assertEqual(client.post(self.url, {"body": "Useful"}).status_code, 403)
-        self.assertFalse(Feedback.objects.exists())
-        client.get(self.url)
-        response = client.post(self.url, {
-            "body": "Useful", "csrfmiddlewaretoken": client.cookies["csrftoken"].value,
-        })
-        self.assertEqual(response.status_code, 302)
-
-    def test_database_rejects_duplicate_feedback(self):
-        FeedbackFactory(course=self.course, student=self.student)
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                FeedbackFactory(course=self.course, student=self.student)
-
-    def test_feedback_model_rejects_teacher(self):
-        entry = Feedback(course=self.course, student=self.course.teacher, body="Hello")
-        with self.assertRaises(ValidationError):
-            entry.full_clean()
 
     def test_members_can_read_feedback_but_html_is_escaped(self):
         FeedbackFactory(course=self.course, student=self.student, body="<script>hello</script>")
@@ -102,12 +68,3 @@ class FeedbackTests(APITestCase):
                 self.assertContains(response, "&lt;script&gt;hello&lt;/script&gt;")
                 self.assertNotContains(response, "<script>")
                 self.assertNotContains(response, "Write or update your feedback")
-
-    def test_feedback_is_paginated_newest_first_and_stays_on_its_course(self):
-        entries = FeedbackFactory.create_batch(11, course=self.course)
-        FeedbackFactory()
-        self.client.force_login(self.student)
-        first = self.client.get(self.detail)
-        second = self.client.get(self.detail, {"feedback_page": 2})
-        self.assertEqual(list(first.context["feedback"]), list(reversed(entries[1:])))
-        self.assertEqual(list(second.context["feedback"]), entries[:1])

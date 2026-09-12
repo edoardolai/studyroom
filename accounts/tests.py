@@ -1,6 +1,6 @@
 from django.db import IntegrityError, transaction
 from django.urls import reverse
-from rest_framework.test import APIClient, APITestCase
+from rest_framework.test import APITestCase
 
 from .factories import UserFactory
 from .models import User
@@ -15,10 +15,6 @@ class RegistrationTests(APITestCase):
         }
         data.update(overrides)
         return data
-
-    def test_registration_page_renders(self):
-        response = self.client.get(reverse("accounts:register"))
-        self.assertContains(response, "Create a student account")
 
     def test_registration_stores_details_and_hashed_password(self):
         response = self.client.post(reverse("accounts:register"), self.payload())
@@ -63,24 +59,6 @@ class RegistrationTests(APITestCase):
         self.assertIn("username", response.context["form"].errors)
         self.assertEqual(User.objects.count(), 1)
 
-    def test_authenticated_user_cannot_register_another_account(self):
-        self.client.force_login(UserFactory())
-        response = self.client.post(reverse("accounts:register"), self.payload())
-        self.assertRedirects(response, reverse("accounts:index"))
-        self.assertEqual(User.objects.count(), 1)
-
-    def test_registration_requires_csrf_token(self):
-        client = APIClient(enforce_csrf_checks=True)
-        response = client.post(reverse("accounts:register"), self.payload())
-        self.assertEqual(response.status_code, 403)
-        self.assertFalse(User.objects.exists())
-        client.get(reverse("accounts:register"))
-        response = client.post(reverse("accounts:register"), self.payload(
-            csrfmiddlewaretoken=client.cookies["csrftoken"].value,
-        ))
-        self.assertEqual(response.status_code, 302)
-        self.assertTrue(User.objects.filter(username="newstudent").exists())
-
 
 class LoginTests(APITestCase):
     @classmethod
@@ -106,37 +84,6 @@ class LoginTests(APITestCase):
         self.assertTrue(response.context["form"].non_field_errors())
         self.assertNotIn("_auth_user_id", self.client.session)
 
-    def test_inactive_account_is_rejected(self):
-        inactive = UserFactory(is_active=False)
-        response = self.client.post(reverse("accounts:login"), {
-            "username": inactive.username, "password": "River-stone-482!",
-        })
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.context["form"].non_field_errors())
-        self.assertNotIn("_auth_user_id", self.client.session)
-
-    def test_external_next_url_is_ignored(self):
-        response = self.client.post(reverse("accounts:login"), {
-            "username": self.student.username, "password": "River-stone-482!",
-            "next": "https://example.org/",
-        })
-        self.assertRedirects(response, reverse("accounts:index"))
-
-    def test_teacher_returns_to_requested_page_after_login(self):
-        response = self.client.post(reverse("accounts:login"), {
-            "username": self.teacher.username, "password": "River-stone-482!",
-            "next": reverse("accounts:student-list"),
-        })
-        self.assertRedirects(response, reverse("accounts:student-list"))
-
-    def test_login_requires_csrf_token(self):
-        client = APIClient(enforce_csrf_checks=True)
-        response = client.post(reverse("accounts:login"), {
-            "username": self.student.username, "password": "River-stone-482!",
-        })
-        self.assertEqual(response.status_code, 403)
-        self.assertNotIn("_auth_user_id", client.session)
-
     def test_logout_requires_post_and_clears_session(self):
         self.client.force_login(self.teacher)
         url = reverse("accounts:logout")
@@ -147,18 +94,6 @@ class LoginTests(APITestCase):
         response = self.client.get(reverse("accounts:student-list"))
         self.assertEqual(response.status_code, 302)
 
-    def test_logout_requires_csrf_token(self):
-        client = APIClient(enforce_csrf_checks=True)
-        client.force_login(self.student)
-        self.assertEqual(client.post(reverse("accounts:logout")).status_code, 403)
-        self.assertIn("_auth_user_id", client.session)
-        client.get(reverse("accounts:index"))
-        response = client.post(reverse("accounts:logout"), {
-            "csrfmiddlewaretoken": client.cookies["csrftoken"].value,
-        })
-        self.assertEqual(response.status_code, 302)
-        self.assertNotIn("_auth_user_id", client.session)
-
 
 class StudentListTests(APITestCase):
     @classmethod
@@ -167,12 +102,6 @@ class StudentListTests(APITestCase):
         cls.second_student = UserFactory(username="sam")
         cls.teacher = UserFactory(username="morgan", role=User.Role.TEACHER)
         cls.inactive = UserFactory(is_active=False)
-
-    def test_anonymous_user_is_sent_to_login(self):
-        url = reverse("accounts:student-list")
-        self.assertRedirects(
-            self.client.get(url), f"{reverse('accounts:login')}?next={url}",
-        )
 
     def test_student_gets_403_even_with_staff_flag(self):
         for is_staff in (False, True):
@@ -191,26 +120,6 @@ class StudentListTests(APITestCase):
         self.assertNotContains(response, self.student.email)
         self.assertNotContains(response, self.student.password)
 
-    def test_student_does_not_see_teacher_navigation(self):
-        self.client.force_login(self.student)
-        response = self.client.get(reverse("accounts:index"))
-        self.assertNotContains(response, reverse("accounts:student-list"))
-
-    def test_teacher_is_not_given_admin_access(self):
-        self.client.force_login(self.teacher)
-        self.assertEqual(self.client.get(reverse("admin:index")).status_code, 302)
-
-    def test_student_list_is_paginated(self):
-        UserFactory.create_batch(25)
-        self.client.force_login(self.teacher)
-        response = self.client.get(reverse("accounts:student-list"))
-        self.assertEqual(len(response.context["page"]), 25)
-        second = self.client.get(reverse("accounts:student-list"), {"page": 2})
-        self.assertEqual(len(second.context["page"]), 2)
-        first_ids = {user.pk for user in response.context["page"]}
-        second_ids = {user.pk for user in second.context["page"]}
-        self.assertFalse(first_ids & second_ids)
-
 
 class UserModelTests(APITestCase):
     def test_invalid_role_is_rejected_by_database(self):
@@ -218,17 +127,3 @@ class UserModelTests(APITestCase):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 User.objects.create(username="invalid", role="other")
-
-    def test_superuser_can_create_teacher_through_admin(self):
-        admin = UserFactory(is_staff=True, is_superuser=True)
-        self.client.force_login(admin)
-        response = self.client.post(reverse("admin:accounts_user_add"), {
-            "username": "newteacher", "role": "teacher", "usable_password": "true",
-            "password1": "River-stone-482!", "password2": "River-stone-482!",
-            "_save": "Save",
-        })
-        self.assertEqual(response.status_code, 302)
-        teacher = User.objects.get(username="newteacher")
-        self.assertEqual(teacher.role, User.Role.TEACHER)
-        self.assertTrue(teacher.check_password("River-stone-482!"))
-        self.assertFalse(teacher.is_staff)

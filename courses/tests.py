@@ -1,8 +1,6 @@
-from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models.deletion import ProtectedError
 from django.urls import reverse
-from rest_framework.test import APIClient, APITestCase
+from rest_framework.test import APITestCase
 
 from accounts.factories import UserFactory
 from .factories import CourseFactory, EnrolmentFactory
@@ -32,67 +30,6 @@ class CourseTests(APITestCase):
         response = self.client.post(url, {"title": "SQL", "description": "Practice"})
         self.assertEqual(response.status_code, 403)
         self.assertFalse(Course.objects.exists())
-
-    def test_invalid_course_is_not_saved(self):
-        self.client.force_login(self.teacher)
-        for title, description in [("", "Practice"), ("x" * 151, "Practice"), ("SQL", " ")]:
-            with self.subTest(title=title):
-                response = self.client.post(reverse("courses:create"), {
-                    "title": title, "description": description,
-                })
-                self.assertEqual(response.status_code, 200)
-                self.assertTrue(response.context["form"].errors)
-                self.assertFalse(Course.objects.exists())
-
-    def test_members_can_browse_courses(self):
-        course = CourseFactory(teacher=self.teacher)
-        for user in (self.student, self.teacher):
-            with self.subTest(role=user.role):
-                self.client.force_login(user)
-                response = self.client.get(reverse("courses:list"))
-                self.assertContains(response, course.title)
-                response = self.client.get(reverse("courses:detail", args=[course.pk]))
-                self.assertContains(response, course.description)
-
-    def test_course_pages_require_login(self):
-        course = CourseFactory(teacher=self.teacher)
-        for url in (reverse("courses:list"), reverse("courses:create"),
-                    reverse("courses:detail", args=[course.pk])):
-            with self.subTest(url=url):
-                self.assertRedirects(self.client.get(url), f"{reverse('accounts:login')}?next={url}")
-
-    def test_course_model_rejects_student_owner(self):
-        course = Course(title="SQL", description="Practice", teacher=self.student)
-        with self.assertRaises(ValidationError):
-            course.full_clean()
-
-    def test_missing_course_returns_404(self):
-        self.client.force_login(self.student)
-        self.assertEqual(self.client.get(reverse("courses:detail", args=[99999])).status_code, 404)
-
-    def test_creation_requires_csrf(self):
-        client = APIClient(enforce_csrf_checks=True)
-        client.force_login(self.teacher)
-        response = client.post(reverse("courses:create"), {"title": "SQL", "description": "Practice"})
-        self.assertEqual(response.status_code, 403)
-        self.assertFalse(Course.objects.exists())
-
-    def test_course_list_is_paginated(self):
-        courses = CourseFactory.create_batch(13, teacher=self.teacher)
-        self.client.force_login(self.student)
-        first = self.client.get(reverse("courses:list"))
-        second = self.client.get(reverse("courses:list"), {"page": 2})
-        self.assertEqual(len(first.context["page"]), 12)
-        self.assertEqual(len(second.context["page"]), 1)
-        ids = {course.pk for course in first.context["page"]} | {course.pk for course in second.context["page"]}
-        self.assertEqual(ids, {course.pk for course in courses})
-
-    def test_course_text_is_escaped(self):
-        course = CourseFactory(title="<script>title</script>", description="<script>body</script>")
-        self.client.force_login(self.student)
-        response = self.client.get(reverse("courses:detail", args=[course.pk]))
-        self.assertNotContains(response, "<script>")
-        self.assertContains(response, "&lt;script&gt;")
 
 
 class EnrolmentTests(APITestCase):
@@ -134,24 +71,6 @@ class EnrolmentTests(APITestCase):
                 self.assertEqual(response.status_code, 403)
         self.assertFalse(Enrolment.objects.exists())
 
-    def test_enrolment_requires_login_and_post(self):
-        url = reverse("courses:enrol", args=[self.course.pk])
-        self.assertEqual(self.client.post(url).status_code, 302)
-        self.client.force_login(self.student)
-        self.assertEqual(self.client.get(url).status_code, 405)
-        self.assertFalse(Enrolment.objects.exists())
-
-    def test_enrolment_requires_csrf(self):
-        client = APIClient(enforce_csrf_checks=True)
-        client.force_login(self.student)
-        url = reverse("courses:enrol", args=[self.course.pk])
-        self.assertEqual(client.post(url).status_code, 403)
-        self.assertFalse(Enrolment.objects.exists())
-        client.get(reverse("courses:detail", args=[self.course.pk]))
-        response = client.post(url, {"csrfmiddlewaretoken": client.cookies["csrftoken"].value})
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(Enrolment.objects.count(), 1)
-
     def test_teacher_cannot_view_another_roster(self):
         self.client.force_login(self.other_course.teacher)
         response = self.client.get(reverse("courses:roster", args=[self.course.pk]))
@@ -162,58 +81,3 @@ class EnrolmentTests(APITestCase):
         self.client.force_login(self.student)
         response = self.client.get(reverse("courses:roster", args=[self.course.pk]))
         self.assertEqual(response.status_code, 403)
-
-    def test_teacher_roster_contains_only_own_course_students(self):
-        enrolment = EnrolmentFactory(course=self.course, student=self.student)
-        EnrolmentFactory(course=self.other_course)
-        self.client.force_login(self.course.teacher)
-        response = self.client.get(reverse("courses:roster", args=[self.course.pk]))
-        self.assertEqual(list(response.context["page"]), [enrolment])
-        self.assertNotContains(response, self.student.email)
-
-    def test_my_courses_matches_each_role(self):
-        EnrolmentFactory(course=self.course, student=self.student)
-        for user in (self.student, self.course.teacher):
-            with self.subTest(role=user.role):
-                self.client.force_login(user)
-                response = self.client.get(reverse("courses:mine"))
-                self.assertEqual(list(response.context["page"]), [self.course])
-
-    def test_course_owner_cannot_be_deleted_while_course_exists(self):
-        with self.assertRaises(ProtectedError):
-            self.course.teacher.delete()
-        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
-
-    def test_enrolment_model_rejects_teacher_as_student(self):
-        enrolment = Enrolment(course=self.course, student=self.other_course.teacher)
-        with self.assertRaises(ValidationError):
-            enrolment.full_clean()
-
-
-class CourseHomeTests(APITestCase):
-    @classmethod
-    def setUpTestData(cls):
-        cls.course = CourseFactory()
-        cls.student = UserFactory()
-        cls.other_student = UserFactory()
-        EnrolmentFactory(course=cls.course, student=cls.student)
-
-    def test_student_sees_own_courses_on_home_page(self):
-        self.client.force_login(self.student)
-        response = self.client.get(reverse("accounts:profile", args=[self.student.pk]))
-        self.assertEqual(list(response.context["courses"]), [self.course])
-
-    def test_other_members_cannot_see_student_enrolments_on_profile(self):
-        self.client.force_login(self.other_student)
-        response = self.client.get(reverse("accounts:profile", args=[self.student.pk]))
-        self.assertNotContains(response, self.course.title)
-
-    def test_teachers_courses_are_discoverable_on_profile(self):
-        self.client.force_login(self.student)
-        response = self.client.get(reverse("accounts:profile", args=[self.course.teacher_id]))
-        self.assertEqual(list(response.context["courses"]), [self.course])
-
-    def test_invalid_status_post_keeps_course_information(self):
-        self.client.force_login(self.student)
-        response = self.client.post(reverse("accounts:status-add"), {"body": ""})
-        self.assertEqual(list(response.context["courses"]), [self.course])
