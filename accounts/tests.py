@@ -98,18 +98,22 @@ class LoginTests(APITestCase):
                 self.assertRedirects(response, reverse("accounts:index"))
                 self.assertEqual(self.client.session["_auth_user_id"], str(user.pk))
 
-    def test_wrong_password_and_inactive_account_are_rejected(self):
+    def test_wrong_password_is_rejected(self):
+        response = self.client.post(reverse("accounts:login"), {
+            "username": self.student.username, "password": "wrong",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].non_field_errors())
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_inactive_account_is_rejected(self):
         inactive = UserFactory(is_active=False)
-        credentials = [(self.student.username, "wrong"),
-                       (inactive.username, "River-stone-482!")]
-        for username, password in credentials:
-            with self.subTest(username=username):
-                response = self.client.post(reverse("accounts:login"), {
-                    "username": username, "password": password,
-                })
-                self.assertEqual(response.status_code, 200)
-                self.assertTrue(response.context["form"].non_field_errors())
-                self.assertNotIn("_auth_user_id", self.client.session)
+        response = self.client.post(reverse("accounts:login"), {
+            "username": inactive.username, "password": "River-stone-482!",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["form"].non_field_errors())
+        self.assertNotIn("_auth_user_id", self.client.session)
 
     def test_external_next_url_is_ignored(self):
         response = self.client.post(reverse("accounts:login"), {
@@ -197,7 +201,7 @@ class StudentListTests(APITestCase):
         self.assertEqual(self.client.get(reverse("admin:index")).status_code, 302)
 
     def test_student_list_is_paginated(self):
-        UserFactory.create_batch(25, password="!")
+        UserFactory.create_batch(25)
         self.client.force_login(self.teacher)
         response = self.client.get(reverse("accounts:student-list"))
         self.assertEqual(len(response.context["page"]), 25)
@@ -210,8 +214,10 @@ class StudentListTests(APITestCase):
 
 class UserModelTests(APITestCase):
     def test_invalid_role_is_rejected_by_database(self):
-        with self.assertRaises(IntegrityError), transaction.atomic():
-            User.objects.create(username="invalid", role="other")
+        # Roll back the failed insert before returning to the test transaction.
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                User.objects.create(username="invalid", role="other")
 
     def test_superuser_can_create_teacher_through_admin(self):
         admin = UserFactory(is_staff=True, is_superuser=True)

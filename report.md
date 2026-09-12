@@ -1,20 +1,22 @@
 # Studyroom — CM3035 Final Coursework
 
-Working draft. This report describes the features implemented so far; later sections will grow with the application.
+> Draft status: accounts milestone complete. Profiles, courses, notifications, chat, REST endpoints and deployment are still pending. This note tracks work remaining and is not part of the submission text.
 
 ## 1. Introduction and development approach
 
 Studyroom is an eLearning application being built with Django. The coursework requires student and teacher accounts, course enrolment and materials, feedback, notifications, a user REST interface and real-time chat. The first development step establishes accounts and authentication, since the later features need to know who is making a request and what that person may do.
 
-I am developing the application in small working steps. Each milestone adds its tests and updates this report, so the design explanations can be checked against the implementation. The main browser pages will use Django templates and forms, with JavaScript where interaction requires it. The JSON interface will live separately in `api.py` and `serializers.py`, following the organisation used in my midterm.
+Development started with the project skeleton, then the custom user and migration, registration, and login/logout. The teacher student list provided the first place to test different permissions. The browser pages use Django templates and forms, with views in `views.py` and registration validation in `forms.py`.
 
 ## 2. Accounts and database design
 
 The first model is `accounts.User`, which extends Django's `AbstractUser`. It retains Django's username, password, name and email fields and adds a `role` field with two values: student and teacher. One field makes the two account types mutually exclusive. The field choices validate form input; a database check constraint also rejects other role values when a write bypasses a form.
 
-The custom user was configured before the first migration. Changing the user model after courses and messages reference it would require changing those relationships and potentially moving existing account data. `AbstractUser` keeps the standard authentication behaviour while allowing the additional field [1]. The admin extends `UserAdmin`, including the role on both its creation and editing forms.
+The study guide's authentication example uses a separate profile model linked one-to-one to Django's user. It also discusses defining a custom user before the first migration. I chose that option because the role belongs to the account and is needed whenever permissions are checked. `AbstractUser` keeps the standard authentication behaviour while allowing the additional field [1]. Configuring it before the first migration avoids replacing the user table once other models reference it. The admin extends `UserAdmin`, including the role on both its creation and editing forms.
 
-The ER diagram below shows the application model currently implemented. Django also supplies authentication and session tables. Course relationships will be added to the diagram when their models exist; the inherited authentication tables are omitted here to keep the application design readable.
+`TextChoices` and `CheckConstraint` are small additions to the guide's model examples. `TextChoices` keeps the stored role values and their display labels together, while the constraint enforces the two-value rule in SQLite. Neither replaces the permission checks in the views.
+
+The ER diagram shows the current account fields. Django's supporting authentication and session tables are omitted; this diagram focuses on the application model.
 
 ```mermaid
 erDiagram
@@ -42,17 +44,17 @@ Login and logout use Django's built-in views and session authentication. Logout 
 
 The first teacher function is a paginated list of active student accounts. It shows username and real name, but not email or password information. Anonymous requests go to login; authenticated students receive 403. The template hides the student-list link from students, but the view checks the role independently, so entering the URL directly does not bypass the restriction. Teacher status is separate from `is_staff`: teachers have application permissions, while the staff flag controls entry to Django admin.
 
-At this stage the list covers active students across the site. Later course rosters will be restricted to the owning teacher's courses. The landing page currently confirms the logged-in account and role; it is not yet the discoverable profile page required by the finished application.
+The list covers active students across the site. Django's `Paginator` divides it into pages of 25, keeping the rendered table bounded as accounts are added. My midterm used DRF pagination; this page uses the HTML equivalent. `require_safe` limits the list to GET and HEAD requests. Both are small framework additions to the guide's view examples. The forms use `as_div` to render Django's fields and errors inside containers styled by the stylesheet.
 
 ## 4. Testing
 
-The first milestone has 22 tests in `accounts/tests.py`, run with `python manage.py test`. They use DRF's `APITestCase` and factory_boy, following the test structure from my midterm. The current routes return HTML; REST endpoint tests will be added with the API. Factories provide predictable names and passwords, and each test overrides only the values relevant to its case.
+The account suite has 23 tests in `accounts/tests.py`, run with `python manage.py test`. They use DRF's `APITestCase` and factory_boy, following the test structure from my midterm. The routes tested here return HTML. Factories provide predictable names and passwords, and each test overrides the values relevant to its case. The factory's `Password` helper hashes the test password so the login tests exercise real authentication.
 
 Registration tests check stored names and email, password hashing, duplicate usernames, missing fields and invalid passwords. A tampered request includes a teacher role and both admin flags, then checks that the resulting account is still an ordinary student. Authentication tests cover both roles, incorrect credentials, inactive accounts, permitted local redirects and rejection of an external redirect. Logout tests check that GET does not end the session and that POST does.
 
 The normal test client does not enforce CSRF. Separate cases therefore use `APIClient(enforce_csrf_checks=True)` to check rejected requests without tokens and successful registration/logout with tokens. Permission tests exercise anonymous and student requests to the student list, including a student with the staff flag. They also check that teachers cannot enter admin, inactive students are excluded, private fields are absent and pagination does not repeat rows between pages. The admin creation test submits the actual teacher form. A direct database write with an invalid role checks the constraint independently of form validation.
 
-All 22 tests passed at the end of this milestone. Django's system check also passed, and `makemigrations --check --dry-run` reported no missing migrations. These are server-side checks; they do not establish browser layout quality, concurrency behaviour or the permissions of features that have not been implemented yet.
+The original 22 tests passed. A review then separated incorrect-password and inactive-account checks into two tests so a failure identifies the affected behaviour directly. All 23 tests passed after that change. Django's system check passed, and `makemigrations --check --dry-run` reported no missing migrations. Browser layout and concurrent requests need separate checks.
 
 ## 5. Current local setup
 
@@ -81,7 +83,7 @@ Their local demonstration password is `Studyroom-demo-482!`. They were created t
 
 ## 6. Deployment plan
 
-Deployment has not been carried out. It remains a separate milestone after integration testing. The host must support the eventual ASGI application, WebSocket connections, Redis, a Celery worker and persistent storage. The hosting choice will be justified against those needs and current costs when it is made. The deployed application will be checked for HTTPS/WSS, account permissions, material access and persistence across restarts, and the actual commands and results will replace this planning paragraph.
+> Planning note: deployment follows integration testing. Compare hosts for ASGI/WebSocket support, Redis, a Celery worker, persistent storage and cost. Record the chosen configuration and verify HTTPS/WSS, permissions, uploads and persistence across restarts. No host has been selected or deployment carried out.
 
 ## References
 
@@ -92,4 +94,4 @@ Deployment has not been carried out. It remains a separate milestone after integ
 
 The account foundation reuses Django's password and session handling, leaving a small amount of application-specific code to inspect. The tests demonstrate that the role difference is enforced on a real page and cannot be selected through registration. Using one role field is sufficient for the coursework's two account types, but it would need reconsideration if a person could teach some courses and attend others as a student.
 
-Admin-managed teacher registration gives a clear permission boundary at the cost of manual administration. The current implementation does not verify ownership of email addresses or add login rate limiting. First and last names are required by registration but remain optional on Django's admin form. These are specific limits of the present account workflow, not claims that the whole application is ready for production. The final evaluation will revisit these choices alongside evidence from courses, uploads, chat and deployment.
+Creating teachers through admin prevents self-assignment of teacher privileges, but each new teacher needs an administrator's action. Email format is checked, but ownership of the address is not verified. Login also has no application-level rate limiting. First and last names are required by registration but remain optional on the admin form, so an administrator can create incomplete records. These are limits to address before using the account workflow for real students.
