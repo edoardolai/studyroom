@@ -11,6 +11,7 @@ urlpatterns = [
     path("notifications/", views.notification_list, name="notifications"),
     path("notifications/<int:pk>/read/", views.notification_read, name="notification-read"),
     path("<int:pk>/", views.course_detail, name="detail"),
+    path("<int:pk>/chat/", views.course_chat, name="chat"),
     path("<int:pk>/enrol/", views.enrol, name="enrol"),
     path("<int:pk>/students/", views.roster, name="roster"),
     path("<int:pk>/students/<int:enrolment_id>/remove/", views.student_manage,

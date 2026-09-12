@@ -5,6 +5,7 @@
     <h1>{{ course.title }}</h1>
     <p>Teacher: <a href="{% url 'accounts:profile' course.teacher_id %}">{{ course.teacher.get_full_name|default:course.teacher.username }}</a></p>
     <div class="course-description">{{ course.description|linebreaksbr }}</div>
+    {% if has_access %}<p><a href="{% url 'courses:chat' course.pk %}">Open course chat</a></p>{% endif %}
     {% if user.role == "student" %}
         {% if enrolled %}
             <p>You are enrolled on this course.</p>

@@ -200,3 +200,12 @@ def notification_read(request, pk):
     notification.is_read = True
     notification.save(update_fields=["is_read"])
     return redirect("courses:notifications")
+
+
+@login_required
+@require_safe
+def course_chat(request, pk):
+    course = get_object_or_404(Course, pk=pk)
+    if not can_access_course(request.user, course):
+        raise PermissionDenied
+    return render(request, "courses/chat.html", {"course": course})

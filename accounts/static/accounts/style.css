@@ -62,3 +62,8 @@ input[type="checkbox"] { width: auto; }
 .course-summary h2 { margin-bottom: .5rem; }
 .course-description, .course-summary { overflow-wrap: anywhere; }
 .course-feedback { border-bottom: 1px solid #d7dfd8; overflow-wrap: anywhere; }
+.chat-messages { max-height: 28rem; overflow-y: auto; list-style: none; padding: 0; }
+.chat-messages li { padding: .75rem 0; border-bottom: 1px solid #d7dfd8; overflow-wrap: anywhere; }
+.chat-messages p { margin: .25rem 0; white-space: pre-wrap; }
+.chat-messages time { color: #4c5b53; font-size: .9rem; }
+button:disabled { opacity: .6; cursor: default; }

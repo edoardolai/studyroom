@@ -1,0 +1,20 @@
+{% extends "accounts/base.html" %}
+{% load static %}
+{% block title %}Chat | {{ course.title }}{% endblock %}
+{% block content %}
+    <p><a href="{% url 'courses:detail' course.pk %}">{{ course.title }}</a></p>
+    <h1>Course chat</h1>
+    <p>Messages are shared with this course's teacher and enrolled students. The latest 50 messages load when you connect.</p>
+    <p id="chat-status" role="status">Connecting…</p>
+    <ol id="chat-messages" class="chat-messages" aria-label="Course messages" aria-live="polite"></ol>
+    <form id="chat-form" class="account-form" data-course="{{ course.pk }}">
+        <div>
+            <label for="chat-body">Message</label>
+            <textarea id="chat-body" rows="3" maxlength="1000" required></textarea>
+        </div>
+        <button id="chat-send" type="submit" disabled>Send message</button>
+        <button id="chat-reconnect" type="button" hidden>Reconnect</button>
+    </form>
+    <noscript><p>Enable JavaScript to use course chat.</p></noscript>
+    <script src="{% static 'courses/chat.js' %}" defer></script>
+{% endblock %}
