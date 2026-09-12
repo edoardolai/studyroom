@@ -1,4 +1,5 @@
 from pathlib import Path
+from functools import partial
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -13,6 +14,7 @@ from django.views.decorators.http import require_http_methods, require_POST, req
 from accounts.models import User
 from .forms import CourseForm, FeedbackForm, MaterialForm
 from .models import Course, CourseMaterial, Enrolment, Feedback, Notification
+from .tasks import queue_material_notification
 
 
 def can_view_materials(user, course):
@@ -144,6 +146,7 @@ def material_upload(request, pk):
             material = form.save(commit=False)
             material.course = course
             material.save()
+            transaction.on_commit(partial(queue_material_notification, material.pk))
             messages.success(request, "Material uploaded.")
             return redirect("courses:detail", pk=course.pk)
     else:
