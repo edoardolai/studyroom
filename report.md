@@ -1,6 +1,6 @@
 # Studyroom — CM3035 Final Coursework
 
-> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation, notifications and course chat implemented. REST endpoints and deployment are still pending. The working target is 60–65 tests for the finished application, with 58 currently retained. This note tracks work remaining and is not part of the submission text.
+> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation, notifications, course chat and the user REST API implemented. Final integration, packaging and deployment are still pending. The working target is 60–65 tests for the finished application, with 63 currently retained. This note tracks work remaining and is not part of the submission text.
 
 ## 1. Introduction and development approach
 
@@ -196,35 +196,37 @@ The consumer accepts text of 1–1,000 characters. It saves the author and messa
 
 The page chooses `ws://` locally or `wss://` under HTTPS, shows connection status and disables sending after disconnection. Reconnect reloads the page and its saved history. This small interface supports the required teacher/student conversation without introducing a separate frontend framework.
 
-## 9. Testing
+## 9. User REST interface
 
-The current suite contains 58 tests, run with `python manage.py test`. Tests use DRF's `APITestCase` and factory_boy, following the structure from my midterm. The HTTP routes currently tested return HTML; socket tests exercise JSON messages. Factories provide predictable account details, and their password helper hashes passwords so login tests exercise real authentication.
+The API exposes user data through DRF generic views in `accounts/api.py`, with serializers in `serializers.py`. This follows the lectures' separation between retrieving records and converting or validating their data [10]. All user endpoints require session authentication. The member list and detail return shared profile fields, exclude inactive/admin accounts, and omit email and password data. Photo values point to the existing authenticated photo view rather than raw media paths.
 
-I concentrated on the application's workflows and permission decisions. Registration tests check saved details, password hashing, invalid input, duplicate usernames and attempts to submit teacher/admin flags. Login is checked for both roles and incorrect passwords; logout checks that POST ends the session. Student-list tests check the teacher/student distinction and exclude private fields. A database test independently checks the allowed role values.
+| Endpoint | Methods | Purpose |
+| --- | --- | --- |
+| `/api/users/` | GET | Shared member profiles, 20 per page |
+| `/api/users/<id>/` | GET | One member's shared profile |
+| `/api/users/me/` | GET, PATCH | Read your profile, including email; update name and biography |
 
-Profile tests cover discovering members, shared information, editing only the logged-in account and rejecting submitted privileged fields. Photo tests use small in-memory images and a temporary media directory. They check JPEG/PNG uploads, rejection of a non-image and authenticated delivery. Two cleanup tests check that replacement deletes the old file after commit and that a rolled-back edit preserves it. Status tests cover posting, forged authors, and blank or overlong text.
+The own-profile view takes its object from `request.user`, so an ID in submitted JSON cannot select another account. Its serializer accepts only first name, last name and biography as editable data, using the same length and blank-name rules as the HTML form. Identity, email and role are read-only; passwords and admin flags are not serializer fields. Photo changes remain on the existing upload form. Session-authenticated PATCH requests require a CSRF token.
 
-Course tests check who can create courses, self-enrolment, duplicate prevention and roster restrictions. Material tests cover valid uploads, malformed or misleading file types, teacher ownership and downloads by authorised members. Search tests check name/username matching and the teacher-only restriction. Feedback tests check ownership, updates to an existing entry, invalid text, enrolment requirements and escaped output.
+I added `drf-spectacular` to generate OpenAPI from the views and serializers, with Swagger at `/api/docs/` [11]. Its sidecar package supplies the JavaScript and CSS locally, avoiding a CDN dependency during marking. The generated schema validates without warnings and the documentation's descriptions come from the API view docstrings.
 
-Moderation tests follow removal, blocking and unblocking through their effect on enrolment and downloads. They check that another course and existing feedback are preserved, and reject another teacher or an enrolment ID belonging to another course. The normal test client does not enforce CSRF, so a moderation test uses `APIClient(enforce_csrf_checks=True)` to check rejected requests and a successful submission with a token.
+## 10. Testing
 
-Four notification tests cover the enrolment notice, inbox/read permissions, material task delivery and broker failure. The upload test checks that publishing waits for commit, then runs the task twice to check eligible recipients and duplicate prevention. These tests run without Redis or a worker: the publisher is mocked, while task logic uses the test database.
+The current suite contains 63 tests, run with `python manage.py test`. Tests use DRF's `APITestCase` and factory_boy, following the structure from my midterm. Factories provide predictable records and hashed passwords. Upload tests use temporary storage so they do not change real demonstration files.
 
-Six asynchronous socket tests use Channels' `WebsocketCommunicator` [9]. They cover delivery and history, rejected membership, invalid messages, blocking an open connection, logout and untrusted origins. Tests use an in-memory channel layer and the test database, so Redis is not required for `manage.py test`.
+Coverage focuses on the main workflows and ownership decisions: registration and login, profile editing, status posting, course creation/enrolment, material permissions, feedback, search and moderation. Invalid input and forged account IDs are checked where the application accepts changes. Separate database tests verify role values and duplicate enrolment constraints. Photo cleanup checks distinguish committed changes from rolled-back edits.
 
-All 58 tests passed. This is focused coverage rather than an exhaustive check of every field boundary and page variation. More unusual upload cases, repeated pagination checks and Django's built-in authentication behaviour are not each given a separate test. The remaining tests will concentrate on the REST interface.
+Four notification tests cover enrolment notices, private inboxes, material recipients and broker failure. The publisher is mocked while task logic uses the test database. Six asynchronous socket tests use Channels' `WebsocketCommunicator` [9] and an in-memory channel layer to check delivery/history, membership, invalid messages, blocking, logout and untrusted origins. Neither Redis nor Celery is required to run the tests.
 
-A Chrome walkthrough exercised course creation, PDF upload, student enrolment, downloading and the teacher roster. A separate student account received HTTP 403 when requesting the file directly without enrolment. Desktop and mobile screenshots were inspected, and layout checks covered widths of 320 and 390 pixels. A 150-character title without spaces caused horizontal scrolling on mobile; allowing the heading to wrap fixed it. This is a focused browser check, not a complete accessibility or cross-browser audit.
+Five API tests cover authenticated member data, read-only detail records, own-profile updates, invalid PATCH data and CSRF enforcement. Tests that need CSRF use `APIClient(enforce_csrf_checks=True)` because the normal test client skips that check. All 63 tests passed. This is focused coverage, not an exhaustive test of every field boundary or Django behaviour.
 
-A second walkthrough used separate teacher and student sessions on a temporary course. It checked search, feedback creation and editing, removal followed by re-enrolment, and blocking followed by unblocking. Direct file requests were denied after removal/blocking and succeeded after re-enrolment. The feedback remained visible, and mobile layouts were checked again. The temporary course and its upload were removed afterwards.
+Browser walkthroughs complemented the suite. Separate teacher and student sessions exercised uploads/downloads, enrolment, feedback and moderation. Real Redis/Celery processes delivered a material notification, and real WebSockets carried two-way chat. Reloading restored chat history; blocking an open tab stopped the next message. Screenshots and overflow checks covered desktop and 320/390-pixel mobile layouts. A long unbroken course title exposed horizontal scrolling and was fixed by allowing the heading to wrap.
 
-A notification walkthrough also ran with a real Redis broker and Celery worker. Separate teacher and student browser sessions verified enrolment notices, queued material notices, private inboxes and read status. The worker log confirmed task completion, and the mobile page was inspected. The temporary course, notices and uploaded file were removed after checking.
+Swagger's Try it out successfully updated a temporary account using the session and CSRF token. Requests without that token were rejected, and another member's detail remained read-only. External browser requests were blocked during this check to verify local Swagger assets. Temporary accounts, courses and uploaded files were removed afterwards. The OpenAPI schema also passed `manage.py spectacular --validate --fail-on-warn`. These focused walkthroughs are not a complete accessibility or cross-browser audit.
 
-The live chat walkthrough used two browser sessions with Daphne and Redis. Messages travelled both ways, reloaded from history, remained in their course room and displayed HTML as plain text. Blocking the student while their tab stayed open prevented the next message from reaching it. The layout was checked at 320 and 390 pixels. Temporary chat data was removed afterwards.
+## 11. Current local setup
 
-## 10. Current local setup
-
-The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, the redis Python client 6.4.0, Channels 4.3.2, channels-redis 4.3.0 and Daphne 4.2.3. The local Redis server is version 8.8.0. Pillow was added with photo uploads, pypdf with course materials, and Celery/Redis with notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Exact release dependencies will be captured in `requirements.txt` for the clean-install rehearsal.
+The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, the redis Python client 6.4.0, Channels 4.3.2, channels-redis 4.3.0, Daphne 4.2.3, drf-spectacular 0.29.0 and drf-spectacular-sidecar 2026.9.1. The local Redis server is version 8.8.0. Pillow was added with photo uploads, pypdf with course materials, and Celery/Redis with notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Exact release dependencies will be captured in `requirements.txt` for the clean-install rehearsal.
 
 From the project directory, activate the existing local environment and run:
 
@@ -260,6 +262,8 @@ Notifications opens `/courses/notifications/`. To demonstrate it, log in as sam 
 
 To try chat, open Database practice as morgan and as an enrolled student in a separate browser profile or private window. Choose Open course chat on each course page and exchange messages. Refreshing restores the latest 50 messages. An unenrolled or blocked student cannot open the chat page or socket.
 
+For the API, log in normally and open `/api/users/` or `/api/users/me/` in the browser. Swagger is at `/api/docs/`, with the schema at `/api/schema/`. In Swagger, expand PATCH `/api/users/me/`, choose Try it out, enter e.g. `{"biography": "Practising Django."}` and Execute. The normal login session and CSRF token are used automatically. A separate JSON client must send the session cookie and `X-CSRFToken` for PATCH.
+
 The local database currently contains these demonstration accounts:
 
 | Username | Account |
@@ -271,7 +275,7 @@ The local database currently contains these demonstration accounts:
 
 Their local demonstration password is `Studyroom-demo-482!`. They were created through Django's user model, with `set_password` used to store hashed passwords. A repeatable loader will be introduced once the course demo data has a settled shape. The database is excluded from Git but will be included, together with the required media, in the submission ZIP. The virtual environment will be excluded from that ZIP.
 
-## 11. Deployment plan
+## 12. Deployment plan
 
 > Planning note: deployment follows integration testing. Compare hosts for ASGI/WebSocket support, Redis, a Celery worker, persistent storage and cost. Record the chosen configuration and verify HTTPS/WSS, permissions, uploads and persistence across restarts. No host has been selected or deployment carried out.
 
@@ -289,7 +293,10 @@ Their local demonstration password is `Studyroom-demo-482!`. They were created t
 8. Channels documentation, [Authentication](https://channels.readthedocs.io/en/stable/topics/authentication.html) and [WebSocket security](https://channels.readthedocs.io/en/stable/topics/security.html).
 9. Channels documentation, [Testing](https://channels.readthedocs.io/en/stable/topics/testing.html).
 
-## 12. Critical evaluation
+10. Django REST framework, [Generic views](https://www.django-rest-framework.org/api-guide/generic-views/) and [Session authentication](https://www.django-rest-framework.org/api-guide/authentication/#sessionauthentication).
+11. drf-spectacular, [Documentation](https://drf-spectacular.readthedocs.io/en/latest/readme.html).
+
+## 13. Critical evaluation
 
 The account foundation reuses Django's password and session handling, leaving a small amount of application-specific code to inspect. The tests demonstrate that the role difference is enforced on a real page and cannot be selected through registration. Using one role field is sufficient for the coursework's two account types, but it would need reconsideration if a person could teach some courses and attend others as a student.
 
@@ -308,3 +315,5 @@ One editable feedback entry avoids repeated reviews from the same student, but d
 Celery adds two processes to run and monitor. The direct fallback handles an unavailable broker during publishing, but is not a complete delivery guarantee: a worker crash, lost Redis data or exhausted database retries can still leave notices missing. There is no scheduled reconciliation or delivery dashboard. Notifications are triggered by the application's enrolment and upload views; direct admin/ORM changes do not send them. For a larger service I would review delivery monitoring and notification retention, and decide whether live updates are worth adding to the inbox.
 
 Chat reuses course membership, which keeps its permissions understandable, but new members can read the recent history and messages cannot yet be edited or deleted individually. Only the latest 50 are loaded on connection; older messages remain stored without a browsing interface. Rechecking sessions and membership adds database work per event. A busy service would need to measure that cost and add message-rate limits. Saving before broadcasting preserves history if live delivery fails, but there are no delivery receipts or automatic resend: after a connection problem, users should reconnect and check the history before repeating a message.
+
+The REST interface deliberately exposes profile data rather than every model. Reusing session authentication keeps it consistent with the website, but an independent mobile client would need an authentication design of its own. Profile validation now exists in both a form and serializer; future changes need to keep them aligned. Registration and photo updates remain in the HTML interface; the API does not offer password changes.
