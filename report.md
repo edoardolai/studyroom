@@ -12,9 +12,9 @@ Development started with the project skeleton, then the custom user and migratio
 
 The first model is `accounts.User`, which extends Django's `AbstractUser`. It retains Django's username, password, name and email fields and adds a `role` field with two values: student and teacher. One field makes the two account types mutually exclusive. The field choices validate form input; a database check constraint also rejects other role values when a write bypasses a form.
 
-The study guide's authentication example uses a separate profile model linked one-to-one to Django's user. It also discusses defining a custom user before the first migration. I chose that option because the role belongs to the account and is needed whenever permissions are checked. `AbstractUser` keeps the standard authentication behaviour while allowing the additional field [1]. Configuring it before the first migration avoids replacing the user table once other models reference it. The admin extends `UserAdmin`, including the role on both its creation and editing forms.
+I used a custom user because the role belongs to the account and is needed whenever permissions are checked. `AbstractUser` keeps the standard authentication behaviour while allowing the additional field [1]. Configuring it before the first migration avoids replacing the user table once other models reference it. The admin extends `UserAdmin`, including the role on both its creation and editing forms.
 
-`TextChoices` and `CheckConstraint` are small additions to the guide's model examples. `TextChoices` keeps the stored role values and their display labels together, while the constraint enforces the two-value rule in SQLite. Neither replaces the permission checks in the views.
+To keep role values and their display labels together, I used `TextChoices`. A `CheckConstraint` enforces the two-value rule in SQLite, including writes made outside a form. The views then check the stored role to decide whether the user can perform an action.
 
 The ER diagram shows the current account fields. Django's supporting authentication and session tables are omitted; this diagram focuses on the application model.
 
@@ -44,7 +44,7 @@ Login and logout use Django's built-in views and session authentication. Logout 
 
 The first teacher function is a paginated list of active student accounts. It shows username and real name, but not email or password information. Anonymous requests go to login; authenticated students receive 403. The template hides the student-list link from students, but the view checks the role independently, so entering the URL directly does not bypass the restriction. Teacher status is separate from `is_staff`: teachers have application permissions, while the staff flag controls entry to Django admin.
 
-The list covers active students across the site. Django's `Paginator` divides it into pages of 25, keeping the rendered table bounded as accounts are added. My midterm used DRF pagination; this page uses the HTML equivalent. `require_safe` limits the list to GET and HEAD requests. Both are small framework additions to the guide's view examples. The forms use `as_div` to render Django's fields and errors inside containers styled by the stylesheet.
+The list covers active students across the site. To keep the table manageable as accounts are added, I used Django's `Paginator` to divide it into pages of 25. Since the page only displays records, `require_safe` limits it to GET and HEAD requests. The forms use `as_div` to render Django's fields and errors inside containers styled by the stylesheet.
 
 ## 4. Testing
 
