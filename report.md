@@ -1,6 +1,6 @@
 # Studyroom — CM3035 Final Coursework
 
-> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation and notifications implemented. Chat, REST endpoints and deployment are still pending. The working target is 60–65 tests for the finished application, with 52 currently retained. This note tracks work remaining and is not part of the submission text.
+> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation, notifications and course chat implemented. REST endpoints and deployment are still pending. The working target is 60–65 tests for the finished application, with 58 currently retained. This note tracks work remaining and is not part of the submission text.
 
 ## 1. Introduction and development approach
 
@@ -33,6 +33,8 @@ Status updates belong in their own table because an account can post many of the
 `CourseMaterial` stores a title, file path, upload time and course foreign key. The owning teacher is already available through the course, so it does not repeat that account reference. This structure keeps account details, course descriptions and individual materials in their respective tables, while enrolment represents the many-to-many student/course relationship.
 
 `Feedback` stores the student, course, text and last update time. A unique student/course pair gives each student one editable entry. It references the course and student directly, so removing an enrolment does not erase what the student wrote. Deleting the account or course does cascade to its feedback. The text is limited to 2,000 characters; no rating scale was needed for the written feedback requirement.
+
+`ChatMessage` belongs to a course and an author, with text and creation time. The course itself identifies the room, so a separate room table would duplicate the relationship. Deleting a course or author cascades to their messages. The sender is assigned from the authenticated session, never from submitted JSON.
 
 The ER diagram shows these application fields and relationships. Django's supporting authentication and session tables are omitted.
 
@@ -107,6 +109,15 @@ erDiagram
         boolean is_read
         datetime created_at
     }
+    USER ||--o{ CHAT_MESSAGE : sends
+    COURSE ||--o{ CHAT_MESSAGE : stores
+    CHAT_MESSAGE {
+        bigint id PK
+        bigint course_id FK
+        bigint author_id FK
+        varchar body "up to 1000 characters"
+        datetime created_at
+    }
 ```
 
 ## 3. Registration, authentication and permissions
@@ -143,7 +154,7 @@ Materials are uploaded by the course teacher. The form accepts a title and file,
 
 I used Pillow for JPEG/PNG checks and added `pypdf` to read PDF structure, rather than treating a `.pdf` extension as proof of a valid document. The PDF reader uses strict mode and requires an unencrypted document with at least one page [4]. Images must match their extension and fit within 4096 by 4096 pixels. All materials have a 10 MB limit. These checks reject unsupported, malformed and oversized uploads; they are not malware scanning. Strict PDF parsing can also reject a damaged document that a viewer would repair, so the user may need to export a clean copy.
 
-Course logic lives in the `courses` app. The HTML views remain short functions; the shared `can_view_materials` helper prevents the course page and download endpoint from making different permission decisions. Course lists, rosters and materials are paginated. `select_related` retrieves teacher/student details with the corresponding rows rather than issuing another query for each displayed name.
+Course logic lives in the `courses` app. The HTML views remain short functions; the shared `can_access_course` helper prevents the course page and download endpoint from making different permission decisions. Course lists, rosters and materials are paginated. `select_related` retrieves teacher/student details with the corresponding rows rather than issuing another query for each displayed name.
 
 ### Feedback and teacher search
 
@@ -175,9 +186,19 @@ The Notifications page filters by the logged-in recipient, shows unread status a
 
 The task retries temporary database errors up to three times. If publishing fails because the broker is unavailable, a small wrapper logs the failure and creates the notices directly. This preserves the normal workflow during local development, at the cost of making that upload slower. When Redis accepts a task but no worker is running, the task waits in the queue instead. No result backend is configured because the outcome is stored in the notification table.
 
-## 8. Testing
+## 8. Course chat over WebSockets
 
-The current suite contains 52 tests, run with `python manage.py test`. Tests use DRF's `APITestCase` and factory_boy, following the structure from my midterm. The routes currently tested return HTML. Factories provide predictable account details, and their password helper hashes passwords so login tests exercise real authentication.
+I built chat in three increments: Channels routing and an authenticated connection, then saved messages with access checks, then the browser interface. Daphne serves HTTP and WebSocket traffic through the project's ASGI application. HTTP still uses Django's normal handler; `/ws/courses/<id>/chat/` routes to an asynchronous consumer. `AuthMiddlewareStack` supplies the session, and `AllowedHostsOriginValidator` restricts connection origins [8].
+
+Each course has a shared room for its teacher and enrolled, unblocked students. I moved the existing material-access rule into `permissions.py` so the HTTP chat view and socket use the same decision. On connection and each incoming or outgoing message, the consumer reloads the database-backed session and checks membership. This catches logout in another tab, removal and blocking during a connection. A revoked socket closes on its next activity; there is no separate background check of idle sockets.
+
+The consumer accepts text of 1–1,000 characters. It saves the author and message before publishing a `chat.message` event to the course's Redis group. `database_sync_to_async` keeps synchronous ORM work out of the asynchronous consumer. Redis transports live events; SQLite retains history. Connecting loads the latest 50 saved messages in order. The frontend uses message IDs to avoid showing duplicates when history overlaps a broadcast, and inserts text with `textContent` so HTML stays text.
+
+The page chooses `ws://` locally or `wss://` under HTTPS, shows connection status and disables sending after disconnection. Reconnect reloads the page and its saved history. This small interface supports the required teacher/student conversation without introducing a separate frontend framework.
+
+## 9. Testing
+
+The current suite contains 58 tests, run with `python manage.py test`. Tests use DRF's `APITestCase` and factory_boy, following the structure from my midterm. The HTTP routes currently tested return HTML; socket tests exercise JSON messages. Factories provide predictable account details, and their password helper hashes passwords so login tests exercise real authentication.
 
 I concentrated on the application's workflows and permission decisions. Registration tests check saved details, password hashing, invalid input, duplicate usernames and attempts to submit teacher/admin flags. Login is checked for both roles and incorrect passwords; logout checks that POST ends the session. Student-list tests check the teacher/student distinction and exclude private fields. A database test independently checks the allowed role values.
 
@@ -189,7 +210,9 @@ Moderation tests follow removal, blocking and unblocking through their effect on
 
 Four notification tests cover the enrolment notice, inbox/read permissions, material task delivery and broker failure. The upload test checks that publishing waits for commit, then runs the task twice to check eligible recipients and duplicate prevention. These tests run without Redis or a worker: the publisher is mocked, while task logic uses the test database.
 
-All 52 tests passed. This is focused coverage rather than an exhaustive check of every field boundary and page variation. More unusual upload cases, repeated pagination checks and Django's built-in authentication behaviour are not each given a separate test. The remaining tests will concentrate on chat and the REST interface as those features are added.
+Six asynchronous socket tests use Channels' `WebsocketCommunicator` [9]. They cover delivery and history, rejected membership, invalid messages, blocking an open connection, logout and untrusted origins. Tests use an in-memory channel layer and the test database, so Redis is not required for `manage.py test`.
+
+All 58 tests passed. This is focused coverage rather than an exhaustive check of every field boundary and page variation. More unusual upload cases, repeated pagination checks and Django's built-in authentication behaviour are not each given a separate test. The remaining tests will concentrate on the REST interface.
 
 A Chrome walkthrough exercised course creation, PDF upload, student enrolment, downloading and the teacher roster. A separate student account received HTTP 403 when requesting the file directly without enrolment. Desktop and mobile screenshots were inspected, and layout checks covered widths of 320 and 390 pixels. A 150-character title without spaces caused horizontal scrolling on mobile; allowing the heading to wrap fixed it. This is a focused browser check, not a complete accessibility or cross-browser audit.
 
@@ -197,9 +220,11 @@ A second walkthrough used separate teacher and student sessions on a temporary c
 
 A notification walkthrough also ran with a real Redis broker and Celery worker. Separate teacher and student browser sessions verified enrolment notices, queued material notices, private inboxes and read status. The worker log confirmed task completion, and the mobile page was inspected. The temporary course, notices and uploaded file were removed after checking.
 
-## 9. Current local setup
+The live chat walkthrough used two browser sessions with Daphne and Redis. Messages travelled both ways, reloaded from history, remained in their course room and displayed HTML as plain text. Blocking the student while their tab stayed open prevented the next message from reaching it. The layout was checked at 320 and 390 pixels. Temporary chat data was removed afterwards.
 
-The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3 and the redis Python client 6.4.0. The local Redis server is version 8.8.0. Pillow was added with photo uploads, pypdf with course materials, and Celery/Redis with notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Exact release dependencies will be captured in `requirements.txt` for the clean-install rehearsal.
+## 10. Current local setup
+
+The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, the redis Python client 6.4.0, Channels 4.3.2, channels-redis 4.3.0 and Daphne 4.2.3. The local Redis server is version 8.8.0. Pillow was added with photo uploads, pypdf with course materials, and Celery/Redis with notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Exact release dependencies will be captured in `requirements.txt` for the clean-install rehearsal.
 
 From the project directory, activate the existing local environment and run:
 
@@ -219,7 +244,7 @@ redis-server --bind 127.0.0.1 --dir /tmp --dbfilename studyroom-redis.rdb
 celery -A studyroom worker --loglevel=INFO --pool=solo
 ```
 
-The local worker uses one process, suitable for the small SQLite demonstration. Redis listens on port 6379, database 0, with a `studyroom` task queue. Its development snapshot is in `/tmp`; deployment will need persistent storage. If Redis is already running on that port, use the existing local instance. Tests do not require either process.
+The local worker uses one process, suitable for the small SQLite demonstration. Redis listens on port 6379, database 0, with a `studyroom` task queue. Its development snapshot is in `/tmp`; deployment will need persistent storage. If Redis is already running on that port, use the existing local instance. Chat uses the same Redis server with a separate `studyroom-chat` key prefix. Daphne is first in `INSTALLED_APPS`, so `manage.py runserver` now serves ASGI and accepts WebSockets. Tests do not require Redis or Celery.
 
 Open `http://127.0.0.1:8000/`. Registration is at `/accounts/register/`, login at `/accounts/login/`, the teacher student list at `/students/`, and administration at `/admin/`. Run the tests with `python manage.py test`; no demo-data loading is required for tests.
 
@@ -233,6 +258,8 @@ As alex, open Database practice and choose Write or update your feedback. As mor
 
 Notifications opens `/courses/notifications/`. To demonstrate it, log in as sam and enrol on Database practice, then check morgan's inbox. Upload a new material as morgan and refresh the enrolled student's inbox after the worker runs. Existing enrolments and files from before this feature do not create notices retroactively.
 
+To try chat, open Database practice as morgan and as an enrolled student in a separate browser profile or private window. Choose Open course chat on each course page and exchange messages. Refreshing restores the latest 50 messages. An unenrolled or blocked student cannot open the chat page or socket.
+
 The local database currently contains these demonstration accounts:
 
 | Username | Account |
@@ -244,7 +271,7 @@ The local database currently contains these demonstration accounts:
 
 Their local demonstration password is `Studyroom-demo-482!`. They were created through Django's user model, with `set_password` used to store hashed passwords. A repeatable loader will be introduced once the course demo data has a settled shape. The database is excluded from Git but will be included, together with the required media, in the submission ZIP. The virtual environment will be excluded from that ZIP.
 
-## 10. Deployment plan
+## 11. Deployment plan
 
 > Planning note: deployment follows integration testing. Compare hosts for ASGI/WebSocket support, Redis, a Celery worker, persistent storage and cost. Record the chosen configuration and verify HTTPS/WSS, permissions, uploads and persistence across restarts. No host has been selected or deployment carried out.
 
@@ -259,7 +286,10 @@ Their local demonstration password is `Studyroom-demo-482!`. They were created t
 
 7. Celery documentation, [First steps with Django](https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html).
 
-## 11. Critical evaluation
+8. Channels documentation, [Authentication](https://channels.readthedocs.io/en/stable/topics/authentication.html) and [WebSocket security](https://channels.readthedocs.io/en/stable/topics/security.html).
+9. Channels documentation, [Testing](https://channels.readthedocs.io/en/stable/topics/testing.html).
+
+## 12. Critical evaluation
 
 The account foundation reuses Django's password and session handling, leaving a small amount of application-specific code to inspect. The tests demonstrate that the role difference is enforced on a real page and cannot be selected through registration. Using one role field is sufficient for the coursework's two account types, but it would need reconsideration if a person could teach some courses and attend others as a student.
 
@@ -271,8 +301,10 @@ Old profile photos are now deleted after committed replacement/removal, but the 
 
 Each course has one teacher and is available for enrolment as soon as it is created. There is no draft/published state, capacity limit or student withdrawal flow. This covers the current coursework workflow with a small schema, but a real teaching service would need to decide those policies. Role checks in model validation do not run on arbitrary ORM saves; the current web paths assign roles and relationships explicitly, while admin changes still require care. SQLite is sufficient for the local demonstration, but the sequential duplicate-enrolment tests do not establish behaviour under concurrent write load.
 
-Keeping blocking on the enrolment made access rules easy to test, but it means that row existence alone no longer proves membership. Material notifications now exclude blocked records; chat will need the same access rule. Removal and unblocking leave no moderation history; a service handling disputes would need reasons, timestamps and an audit trail. A permission check also cannot retract a file already downloaded, and concurrent moderation during an in-progress request has not been load-tested.
+Keeping blocking on the enrolment made access rules easy to test, but it means that row existence alone no longer proves membership. Material notifications now exclude blocked records; chat also checks current course access. Removal and unblocking leave no moderation history; a service handling disputes would need reasons, timestamps and an audit trail. A permission check also cannot retract a file already downloaded, and concurrent moderation during an in-progress request has not been load-tested.
 
 One editable feedback entry avoids repeated reviews from the same student, but does not preserve earlier versions. Retaining it after removal protects criticism, while abusive feedback still needs administrator intervention. Search is adequate for a small directory, although SQLite's case-insensitive matching is limited for non-ASCII text and it offers no ranking or typo correction. These are areas to revisit with realistic usage data.
 
 Celery adds two processes to run and monitor. The direct fallback handles an unavailable broker during publishing, but is not a complete delivery guarantee: a worker crash, lost Redis data or exhausted database retries can still leave notices missing. There is no scheduled reconciliation or delivery dashboard. Notifications are triggered by the application's enrolment and upload views; direct admin/ORM changes do not send them. For a larger service I would review delivery monitoring and notification retention, and decide whether live updates are worth adding to the inbox.
+
+Chat reuses course membership, which keeps its permissions understandable, but new members can read the recent history and messages cannot yet be edited or deleted individually. Only the latest 50 are loaded on connection; older messages remain stored without a browsing interface. Rechecking sessions and membership adds database work per event. A busy service would need to measure that cost and add message-rate limits. Saving before broadcasting preserves history if live delivery fails, but there are no delivery receipts or automatic resend: after a connection problem, users should reconnect and check the history before repeating a message.

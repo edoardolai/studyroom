@@ -68,3 +68,12 @@ erDiagram
         boolean is_read
         datetime created_at
     }
+    USER ||--o{ CHAT_MESSAGE : sends
+    COURSE ||--o{ CHAT_MESSAGE : stores
+    CHAT_MESSAGE {
+        bigint id PK
+        bigint course_id FK
+        bigint author_id FK
+        varchar body "up to 1000 characters"
+        datetime created_at
+    }

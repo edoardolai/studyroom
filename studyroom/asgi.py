@@ -18,6 +18,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "studyroom.settings")
 
 django_application = get_asgi_application()
 
+# Initialise Django before importing consumers that use models.
 from courses.routing import websocket_urlpatterns
 
 application = ProtocolTypeRouter({
