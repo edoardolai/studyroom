@@ -38,6 +38,7 @@ erDiagram
         bigint course_id FK "unique with student_id"
         bigint student_id FK
         datetime enrolled_at
+        boolean is_blocked
     }
     COURSE_MATERIAL {
         bigint id PK
@@ -45,4 +46,13 @@ erDiagram
         varchar title
         varchar file "stored file path"
         datetime uploaded_at
+    }
+    USER ||--o{ FEEDBACK : writes
+    COURSE ||--o{ FEEDBACK : receives
+    FEEDBACK {
+        bigint id PK
+        bigint course_id FK "unique with student_id"
+        bigint student_id FK
+        text body "up to 2000 characters"
+        datetime updated_at
     }

@@ -1,6 +1,6 @@
 # Studyroom — CM3035 Final Coursework
 
-> Draft status: accounts, profiles and course enrolment/materials implemented. Feedback, search, moderation, notifications, chat, REST endpoints and deployment are still pending. This note tracks work remaining and is not part of the submission text.
+> Draft status: accounts, profiles, courses/materials, feedback, teacher search and course moderation implemented. Notifications, chat, REST endpoints and deployment are still pending. This note tracks work remaining and is not part of the submission text.
 
 ## 1. Introduction and development approach
 
@@ -11,6 +11,8 @@ Development started with the project skeleton, then the custom user and migratio
 The next step added member home pages and biography editing. Photo uploads followed once the editing workflow had ownership tests, then status updates added the first one-to-many relationship. These changes have separate migrations, so existing accounts receive the new optional fields without needing to be recreated.
 
 Courses were built in three steps: creation and browsing, enrolment and rosters, then uploaded materials. This order gave each upload a course to belong to and an established permission rule for downloading it. The course work also exposed a repeated home-page context between normal viewing and an invalid status submission; a small helper now supplies the same course information to both.
+
+Teacher search came next, using the existing member directory. Feedback then added a form for enrolled students, followed by removal and blocking controls on the roster. Adding blocking required revisiting downloads and home-page queries: a stored enrolment could now represent a block, so checking only whether the row existed was no longer enough.
 
 ## 2. Accounts and database design
 
@@ -26,9 +28,11 @@ Status updates belong in their own table because an account can post many of the
 
 `Course` has one teacher, a title, a description and a creation time. Its teacher uses `PROTECT`: deleting a teacher should not silently remove courses that students have joined. The teacher's name is retrieved through the relationship. Titles are not unique, since different teachers can reasonably offer courses with the same title; URLs identify courses by primary key.
 
-`Enrolment` links a student and a course and records when they joined. A unique constraint on the pair prevents duplicate participation, including writes outside the web form. Keeping the enrolment as a record also leaves a place for the removal and blocking state in the next step. Course and student deletion cascade to their enrolments. Model validation checks the account role for course owners and enrolments; the web views separately enforce the role and assign the account from the session.
+`Enrolment` links a student and a course and records when they joined. A unique constraint on the pair prevents duplicate participation, including writes outside the web form. Its `is_blocked` flag defaults to false, preserving existing enrolments when the migration runs. A blocked row records that the student cannot rejoin; removal deletes the row. Course and student deletion cascade to their enrolments. Model validation checks the account role for course owners and enrolments; the web views separately enforce the role and assign the account from the session.
 
 `CourseMaterial` stores a title, file path, upload time and course foreign key. The owning teacher is already available through the course, so it does not repeat that account reference. This structure keeps account details, course descriptions and individual materials in their respective tables, while enrolment represents the many-to-many student/course relationship.
+
+`Feedback` stores the student, course, text and last update time. A unique student/course pair gives each student one editable entry. It references the course and student directly, so removing an enrolment does not erase what the student wrote. Deleting the account or course does cascade to its feedback. The text is limited to 2,000 characters; no rating scale was needed for the written feedback requirement.
 
 The ER diagram shows these application fields and relationships. Django's supporting authentication and session tables are omitted.
 
@@ -73,6 +77,7 @@ erDiagram
         bigint course_id FK "unique with student_id"
         bigint student_id FK
         datetime enrolled_at
+        boolean is_blocked
     }
     COURSE_MATERIAL {
         bigint id PK
@@ -80,6 +85,15 @@ erDiagram
         varchar title
         varchar file "stored file path"
         datetime uploaded_at
+    }
+    USER ||--o{ FEEDBACK : writes
+    COURSE ||--o{ FEEDBACK : receives
+    FEEDBACK {
+        bigint id PK
+        bigint course_id FK "unique with student_id"
+        bigint student_id FK
+        text body "up to 2000 characters"
+        datetime updated_at
     }
 ```
 
@@ -119,6 +133,18 @@ I used Pillow for JPEG/PNG checks and added `pypdf` to read PDF structure, rathe
 
 Course logic lives in the `courses` app. The HTML views remain short functions; the shared `can_view_materials` helper prevents the course page and download endpoint from making different permission decisions. Course lists, rosters and materials are paginated. `select_related` retrieves teacher/student details with the corresponding rows rather than issuing another query for each displayed name.
 
+### Feedback and teacher search
+
+An enrolled student can write or update feedback through a `ModelForm` exposing only the text. The course comes from the URL and the student from the session. `update_or_create` uses that pair to save an entry, so submitting the form again updates it. Feedback is visible to signed-in members browsing the course, including those considering enrolment, and the form explains this before submission. Output is escaped and paginated independently from materials. Removed and blocked students keep their existing feedback but cannot change it without active enrolment.
+
+Teachers search the Members page by username, first name or surname. Each word must match at least one of those fields, so a query such as “Alex Wood” can span first and last name. I used `Q` expressions to combine the alternatives within each word [6]. Results retain the directory's exclusions for inactive and administrator accounts, and do not expose email addresses. Students can still browse member home pages; supplying a non-empty search query as a student returns a permission error. Search text is limited to 150 characters, and pagination keeps it in the URL.
+
+### Removing and blocking students
+
+I interpreted removal and blocking as course-level decisions, since teachers manage their own rosters. They do not disable a student's account or affect another teacher's course. Removal deletes the enrolment and allows the student to join again. Blocking retains it with `is_blocked=True`, preventing re-enrolment, material access and feedback editing. Blocked records appear separately on the teacher's roster and are excluded from the student's home-page courses and My courses.
+
+Each action opens a confirmation page explaining its effect; only a CSRF-protected POST changes the record. Both the course owner and the enrolment's membership of that course are checked on the server. The action comes from the URL configuration, rather than a submitted form value. Removal accepts only an unblocked enrolment, so submitting an old removal form cannot lift a newly applied block. Unblocking deletes the blocked record and lets the student choose whether to enrol again. Existing feedback remains visible, preventing removal from silently erasing criticism.
+
 ## 6. Photo cleanup
 
 The first upload implementation left replaced photos on disk. During the file-handling work I added cleanup using user-model signals, so it also covers admin saves and queryset deletion. Before a save, the previous file name is remembered; after a successful save, a changed reference schedules cleanup. Account deletion schedules the same check.
@@ -127,7 +153,7 @@ Deletion uses `transaction.on_commit`: if a database transaction rolls back, its
 
 ## 7. Testing
 
-The suite has 108 tests across account, profile, photo-cleanup, course and material test files. All run with `python manage.py test`. They use DRF's `APITestCase` and factory_boy, following the test structure from my midterm. The routes tested here return HTML. Factories provide predictable names and passwords, and each test overrides the values relevant to its case. The factory's `Password` helper hashes the test password so the login tests exercise real authentication.
+The suite has 139 tests across accounts, profiles, photo cleanup, courses, materials, search, feedback and moderation. All run with `python manage.py test`. They use DRF's `APITestCase` and factory_boy, following the test structure from my midterm. The routes tested here return HTML. Factories provide predictable names and passwords, and each test overrides the values relevant to its case. The factory's `Password` helper hashes the test password so the login tests exercise real authentication.
 
 Registration tests check stored names and email, password hashing, duplicate usernames, missing fields and invalid passwords. A tampered request includes a teacher role and both admin flags, then checks that the resulting account is still an ordinary student. Authentication tests cover both roles, incorrect credentials, inactive accounts, permitted local redirects and rejection of an external redirect. Logout tests check that GET does not end the session and that POST does.
 
@@ -139,9 +165,13 @@ Status tests check both roles, a forged author, blank and overlong input, the 50
 
 Course tests cover forged owner/student fields, duplicate enrolment at both HTTP and database levels, teacher/student restrictions, isolated rosters and home-page course visibility. Material tests check valid PDFs/images, malformed files, misleading extensions, encrypted PDFs, size limits and complete download bytes. They also test direct requests from outsiders and loss of download access after an enrolment is deleted.
 
-Photo cleanup tests execute captured commit callbacks to verify replacement, removal and account deletion. Other cases roll back an edit, update an unrelated field, submit an invalid form or share a file between two accounts. The expected result is checked on storage as well as in the database. All 108 tests passed after these changes. Django's system check passed, and migration checks remain part of each schema change.
+Photo cleanup tests execute captured commit callbacks to verify replacement, removal and account deletion. Other cases roll back an edit, update an unrelated field, submit an invalid form or share a file between two accounts. The expected result is checked on storage as well as in the database.
+
+The next 31 tests cover search permissions and pagination, feedback ownership and length boundaries, and removal/blocking transitions. Moderation tests verify denied downloads and feedback edits, rejection of re-enrolment while blocked, preserved feedback and unaffected courses. They also submit a stale removal confirmation after blocking and check that it cannot lift the block. All 139 tests passed, along with Django's system and migration checks.
 
 A Chrome walkthrough exercised course creation, PDF upload, student enrolment, downloading and the teacher roster. A separate student account received HTTP 403 when requesting the file directly without enrolment. Desktop and mobile screenshots were inspected, and layout checks covered widths of 320 and 390 pixels. A 150-character title without spaces caused horizontal scrolling on mobile; allowing the heading to wrap fixed it. This is a focused browser check, not a complete accessibility or cross-browser audit.
+
+A second walkthrough used separate teacher and student sessions on a temporary course. It checked search, feedback creation and editing, removal followed by re-enrolment, and blocking followed by unblocking. Direct file requests were denied after removal/blocking and succeeded after re-enrolment. The feedback remained visible, and mobile layouts were checked again. The temporary course and its upload were removed afterwards.
 
 ## 8. Current local setup
 
@@ -162,6 +192,8 @@ After login, Members opens `/members/` and My home opens the current user's `/me
 Courses opens `/courses/`; My courses opens `/courses/mine/`. A teacher can create a course, then upload its materials and view its roster from the detail page. A student sees an Enrol button until they have joined, after which the materials become available. Course files are stored in `media/course_materials/` and must also be included when copying the populated application.
 
 The demo course, Database practice, belongs to morgan and contains a sample PDF called Week one exercise. alex is enrolled; sam is not, allowing both download permission cases to be tried.
+
+As alex, open Database practice and choose Write or update your feedback. As morgan, open Members to search, or the course's enrolled-student list to remove/block alex. Each action explains its effect before confirmation. To restore access after a block, unblock alex and then log in as alex to enrol again.
 
 The local database currently contains these demonstration accounts:
 
@@ -185,6 +217,7 @@ Their local demonstration password is `Studyroom-demo-482!`. They were created t
 3. Django documentation, [File uploads](https://docs.djangoproject.com/en/5.2/topics/http/file-uploads/).
 4. pypdf documentation, [PdfReader](https://pypdf.readthedocs.io/en/stable/modules/PdfReader.html).
 5. Django documentation, [Performing actions after commit](https://docs.djangoproject.com/en/5.2/topics/db/transactions/#performing-actions-after-commit).
+6. Django documentation, [Complex lookups with Q objects](https://docs.djangoproject.com/en/5.2/topics/db/queries/#complex-lookups-with-q-objects).
 
 ## 10. Critical evaluation
 
@@ -197,3 +230,7 @@ Serving photos through Django keeps member access checks in one place, but makes
 Old profile photos are now deleted after committed replacement/removal, but the database and filesystem are still separate systems: a failed storage operation or a newly uploaded file followed by transaction rollback can leave an orphan. A periodic reconciliation would be useful for a deployed application. Course-material replacement/deletion through admin also leaves its old files on disk; there is no user-facing material replacement workflow yet. Images are validated but not resized or stripped of metadata. Status updates can be posted and read, but users cannot yet edit or delete individual posts; the admin can manage them.
 
 Each course has one teacher and is available for enrolment as soon as it is created. There is no draft/published state, capacity limit or student withdrawal flow. This covers the current coursework workflow with a small schema, but a real teaching service would need to decide those policies. Role checks in model validation do not run on arbitrary ORM saves; the current web paths assign roles and relationships explicitly, while admin changes still require care. SQLite is sufficient for the local demonstration, but the sequential duplicate-enrolment tests do not establish behaviour under concurrent write load.
+
+Keeping blocking on the enrolment made access rules easy to test, but it means that row existence alone no longer proves membership. Future notifications and chat must also exclude blocked records. Removal and unblocking leave no moderation history; a service handling disputes would need reasons, timestamps and an audit trail. A permission check also cannot retract a file already downloaded, and concurrent moderation during an in-progress request has not been load-tested.
+
+One editable feedback entry avoids repeated reviews from the same student, but does not preserve earlier versions. Retaining it after removal protects criticism, while abusive feedback still needs administrator intervention. Search is adequate for a small directory, although SQLite's case-insensitive matching is limited for non-ASCII text and it offers no ranking or typo correction. These are areas to revisit with realistic usage data.
