@@ -56,3 +56,15 @@ erDiagram
         text body "up to 2000 characters"
         datetime updated_at
     }
+    USER ||--o{ NOTIFICATION : receives
+    COURSE ||--o{ NOTIFICATION : concerns
+    COURSE_MATERIAL |o--o{ NOTIFICATION : announces
+    NOTIFICATION {
+        bigint id PK
+        bigint recipient_id FK "unique with non-null material_id"
+        bigint course_id FK
+        bigint material_id FK "nullable for enrolment notices"
+        varchar message
+        boolean is_read
+        datetime created_at
+    }

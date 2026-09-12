@@ -1,6 +1,6 @@
 # Studyroom — CM3035 Final Coursework
 
-> Draft status: accounts, profiles, courses/materials, feedback, teacher search and course moderation implemented. Notifications, chat, REST endpoints and deployment are still pending. The working target is 60–65 tests for the finished application, with 48 currently retained. This note tracks work remaining and is not part of the submission text.
+> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation and notifications implemented. Chat, REST endpoints and deployment are still pending. The working target is 60–65 tests for the finished application, with 52 currently retained. This note tracks work remaining and is not part of the submission text.
 
 ## 1. Introduction and development approach
 
@@ -95,6 +95,18 @@ erDiagram
         text body "up to 2000 characters"
         datetime updated_at
     }
+    USER ||--o{ NOTIFICATION : receives
+    COURSE ||--o{ NOTIFICATION : concerns
+    COURSE_MATERIAL |o--o{ NOTIFICATION : announces
+    NOTIFICATION {
+        bigint id PK
+        bigint recipient_id FK "unique with non-null material_id"
+        bigint course_id FK
+        bigint material_id FK "nullable for enrolment notices"
+        varchar message
+        boolean is_read
+        datetime created_at
+    }
 ```
 
 ## 3. Registration, authentication and permissions
@@ -151,9 +163,21 @@ The first upload implementation left replaced photos on disk. During the file-ha
 
 Deletion uses `transaction.on_commit`: if a database transaction rolls back, its deletion callback is discarded [5]. Before deleting a file, the callback checks whether any account still references its name. This protects a shared file and leaves unrelated users' uploads alone. Cleanup errors are logged through the robust callback option, so a storage failure does not make an already-saved profile look like a failed edit. Direct queryset updates bypass these save signals and should not be used to replace photos.
 
-## 7. Testing
+## 7. Notifications and background tasks
 
-The current suite contains 48 tests, run with `python manage.py test`. Tests use DRF's `APITestCase` and factory_boy, following the structure from my midterm. The routes currently tested return HTML. Factories provide predictable account details, and their password helper hashes passwords so login tests exercise real authentication.
+Enrolment creates one notification for the course teacher. The enrolment and notice are saved in the same database transaction, so they succeed or roll back together. A repeated enrolment submission returns the existing record and creates no second notice. Removing a student and letting them join again is a new enrolment and produces a new notice.
+
+Material uploads may need to notify a whole class, so I used Celery with Redis to do that work outside the upload request, following the task-worker arrangement from the lectures [7]. The project loads its Celery application alongside settings and discovers `tasks.py` in installed apps. The upload schedules the task after commit and passes only the material's primary key. The worker retrieves the saved material and finds students who joined before it was uploaded and are still active and unblocked. Students joining later already have access to the material and do not receive an old announcement.
+
+`Notification` stores its recipient, course, message, creation time and read flag. Its optional material reference identifies upload notices. A unique recipient/material pair prevents a repeated task from creating duplicates. Enrolment notices have no material reference, so this constraint does not prevent later re-enrolment notices. The course reference gives both kinds a destination link; the message retains the names at the time it was created. Deleting a recipient, course or linked material removes the associated notices.
+
+The Notifications page filters by the logged-in recipient, shows unread status and paginates the history. Marking a notice as read uses POST with CSRF protection and checks ownership again. Its course link goes through the normal course permissions: a historical notice does not grant continued access after removal or blocking. The page needs refreshing to show new notices.
+
+The task retries temporary database errors up to three times. If publishing fails because the broker is unavailable, a small wrapper logs the failure and creates the notices directly. This preserves the normal workflow during local development, at the cost of making that upload slower. When Redis accepts a task but no worker is running, the task waits in the queue instead. No result backend is configured because the outcome is stored in the notification table.
+
+## 8. Testing
+
+The current suite contains 52 tests, run with `python manage.py test`. Tests use DRF's `APITestCase` and factory_boy, following the structure from my midterm. The routes currently tested return HTML. Factories provide predictable account details, and their password helper hashes passwords so login tests exercise real authentication.
 
 I concentrated on the application's workflows and permission decisions. Registration tests check saved details, password hashing, invalid input, duplicate usernames and attempts to submit teacher/admin flags. Login is checked for both roles and incorrect passwords; logout checks that POST ends the session. Student-list tests check the teacher/student distinction and exclude private fields. A database test independently checks the allowed role values.
 
@@ -163,15 +187,19 @@ Course tests check who can create courses, self-enrolment, duplicate prevention 
 
 Moderation tests follow removal, blocking and unblocking through their effect on enrolment and downloads. They check that another course and existing feedback are preserved, and reject another teacher or an enrolment ID belonging to another course. The normal test client does not enforce CSRF, so a moderation test uses `APIClient(enforce_csrf_checks=True)` to check rejected requests and a successful submission with a token.
 
-All 48 tests passed. This is focused coverage rather than an exhaustive check of every field boundary and page variation. More unusual upload cases, repeated pagination checks and Django's built-in authentication behaviour are not each given a separate test. New tests will concentrate on notifications, chat and the REST interface as those features are added.
+Four notification tests cover the enrolment notice, inbox/read permissions, material task delivery and broker failure. The upload test checks that publishing waits for commit, then runs the task twice to check eligible recipients and duplicate prevention. These tests run without Redis or a worker: the publisher is mocked, while task logic uses the test database.
+
+All 52 tests passed. This is focused coverage rather than an exhaustive check of every field boundary and page variation. More unusual upload cases, repeated pagination checks and Django's built-in authentication behaviour are not each given a separate test. The remaining tests will concentrate on chat and the REST interface as those features are added.
 
 A Chrome walkthrough exercised course creation, PDF upload, student enrolment, downloading and the teacher roster. A separate student account received HTTP 403 when requesting the file directly without enrolment. Desktop and mobile screenshots were inspected, and layout checks covered widths of 320 and 390 pixels. A 150-character title without spaces caused horizontal scrolling on mobile; allowing the heading to wrap fixed it. This is a focused browser check, not a complete accessibility or cross-browser audit.
 
 A second walkthrough used separate teacher and student sessions on a temporary course. It checked search, feedback creation and editing, removal followed by re-enrolment, and blocking followed by unblocking. Direct file requests were denied after removal/blocking and succeeded after re-enrolment. The feedback remained visible, and mobile layouts were checked again. The temporary course and its upload were removed afterwards.
 
-## 8. Current local setup
+A notification walkthrough also ran with a real Redis broker and Celery worker. Separate teacher and student browser sessions verified enrolment notices, queued material notices, private inboxes and read status. The worker log confirmed task completion, and the mobile page was inspected. The temporary course, notices and uploaded file were removed after checking.
 
-The project uses a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0 and pypdf 6.18.1. Pillow was added with photo uploads and pypdf with course materials. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Exact release dependencies will be captured in `requirements.txt` for the clean-install rehearsal.
+## 9. Current local setup
+
+The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3 and the redis Python client 6.4.0. The local Redis server is version 8.8.0. Pillow was added with photo uploads, pypdf with course materials, and Celery/Redis with notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Exact release dependencies will be captured in `requirements.txt` for the clean-install rehearsal.
 
 From the project directory, activate the existing local environment and run:
 
@@ -180,6 +208,18 @@ source .venv/bin/activate
 python manage.py migrate
 python manage.py runserver
 ```
+
+For background material notifications, run Redis and a Celery worker in separate terminals. The worker command runs from the project directory with the virtual environment activated:
+
+```sh
+redis-server --bind 127.0.0.1 --dir /tmp --dbfilename studyroom-redis.rdb
+```
+
+```sh
+celery -A studyroom worker --loglevel=INFO --pool=solo
+```
+
+The local worker uses one process, suitable for the small SQLite demonstration. Redis listens on port 6379, database 0, with a `studyroom` task queue. Its development snapshot is in `/tmp`; deployment will need persistent storage. If Redis is already running on that port, use the existing local instance. Tests do not require either process.
 
 Open `http://127.0.0.1:8000/`. Registration is at `/accounts/register/`, login at `/accounts/login/`, the teacher student list at `/students/`, and administration at `/admin/`. Run the tests with `python manage.py test`; no demo-data loading is required for tests.
 
@@ -190,6 +230,8 @@ Courses opens `/courses/`; My courses opens `/courses/mine/`. A teacher can crea
 The demo course, Database practice, belongs to morgan and contains a sample PDF called Week one exercise. alex is enrolled; sam is not, allowing both download permission cases to be tried.
 
 As alex, open Database practice and choose Write or update your feedback. As morgan, open Members to search, or the course's enrolled-student list to remove/block alex. Each action explains its effect before confirmation. To restore access after a block, unblock alex and then log in as alex to enrol again.
+
+Notifications opens `/courses/notifications/`. To demonstrate it, log in as sam and enrol on Database practice, then check morgan's inbox. Upload a new material as morgan and refresh the enrolled student's inbox after the worker runs. Existing enrolments and files from before this feature do not create notices retroactively.
 
 The local database currently contains these demonstration accounts:
 
@@ -202,7 +244,7 @@ The local database currently contains these demonstration accounts:
 
 Their local demonstration password is `Studyroom-demo-482!`. They were created through Django's user model, with `set_password` used to store hashed passwords. A repeatable loader will be introduced once the course demo data has a settled shape. The database is excluded from Git but will be included, together with the required media, in the submission ZIP. The virtual environment will be excluded from that ZIP.
 
-## 9. Deployment plan
+## 10. Deployment plan
 
 > Planning note: deployment follows integration testing. Compare hosts for ASGI/WebSocket support, Redis, a Celery worker, persistent storage and cost. Record the chosen configuration and verify HTTPS/WSS, permissions, uploads and persistence across restarts. No host has been selected or deployment carried out.
 
@@ -215,7 +257,9 @@ Their local demonstration password is `Studyroom-demo-482!`. They were created t
 5. Django documentation, [Performing actions after commit](https://docs.djangoproject.com/en/5.2/topics/db/transactions/#performing-actions-after-commit).
 6. Django documentation, [Complex lookups with Q objects](https://docs.djangoproject.com/en/5.2/topics/db/queries/#complex-lookups-with-q-objects).
 
-## 10. Critical evaluation
+7. Celery documentation, [First steps with Django](https://docs.celeryq.dev/en/stable/django/first-steps-with-django.html).
+
+## 11. Critical evaluation
 
 The account foundation reuses Django's password and session handling, leaving a small amount of application-specific code to inspect. The tests demonstrate that the role difference is enforced on a real page and cannot be selected through registration. Using one role field is sufficient for the coursework's two account types, but it would need reconsideration if a person could teach some courses and attend others as a student.
 
@@ -227,6 +271,8 @@ Old profile photos are now deleted after committed replacement/removal, but the 
 
 Each course has one teacher and is available for enrolment as soon as it is created. There is no draft/published state, capacity limit or student withdrawal flow. This covers the current coursework workflow with a small schema, but a real teaching service would need to decide those policies. Role checks in model validation do not run on arbitrary ORM saves; the current web paths assign roles and relationships explicitly, while admin changes still require care. SQLite is sufficient for the local demonstration, but the sequential duplicate-enrolment tests do not establish behaviour under concurrent write load.
 
-Keeping blocking on the enrolment made access rules easy to test, but it means that row existence alone no longer proves membership. Future notifications and chat must also exclude blocked records. Removal and unblocking leave no moderation history; a service handling disputes would need reasons, timestamps and an audit trail. A permission check also cannot retract a file already downloaded, and concurrent moderation during an in-progress request has not been load-tested.
+Keeping blocking on the enrolment made access rules easy to test, but it means that row existence alone no longer proves membership. Material notifications now exclude blocked records; chat will need the same access rule. Removal and unblocking leave no moderation history; a service handling disputes would need reasons, timestamps and an audit trail. A permission check also cannot retract a file already downloaded, and concurrent moderation during an in-progress request has not been load-tested.
 
 One editable feedback entry avoids repeated reviews from the same student, but does not preserve earlier versions. Retaining it after removal protects criticism, while abusive feedback still needs administrator intervention. Search is adequate for a small directory, although SQLite's case-insensitive matching is limited for non-ASCII text and it offers no ranking or typo correction. These are areas to revisit with realistic usage data.
+
+Celery adds two processes to run and monitor. The direct fallback handles an unavailable broker during publishing, but is not a complete delivery guarantee: a worker crash, lost Redis data or exhausted database retries can still leave notices missing. There is no scheduled reconciliation or delivery dashboard. Notifications are triggered by the application's enrolment and upload views; direct admin/ORM changes do not send them. For a larger service I would review delivery monitoring and notification retention, and decide whether live updates are worth adding to the inbox.
