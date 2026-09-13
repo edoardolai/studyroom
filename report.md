@@ -293,9 +293,11 @@ whitenoise==6.11.0
 zope.interface==8.6
 ```
 
-From the project directory, create an environment and install the dependencies:
+Extract the supplied source archive, then create an environment and install the dependencies:
 
 ```sh
+unzip Studyroom_Source.zip -d Studyroom
+cd Studyroom
 python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
