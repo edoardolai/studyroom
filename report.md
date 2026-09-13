@@ -1,7 +1,5 @@
 # Studyroom — CM3035 Final Coursework
 
-> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation, notifications, course chat and the user REST API implemented. Clean installation, demo data and Railway configuration are complete; the live deployment and final submission packaging are still pending. The working target is 60–65 tests for the finished application, with 63 currently retained. This note tracks work remaining and is not part of the submission text.
-
 ## 1. Introduction and development approach
 
 Studyroom is an eLearning application being built with Django. The coursework requires student and teacher accounts, course enrolment and materials, feedback, notifications, a user REST interface and real-time chat. The first development step establishes accounts and authentication, since the later features need to know who is making a request and what that person may do.
@@ -162,7 +160,7 @@ Course logic lives in the `courses` app. The HTML views remain short functions; 
 
 An enrolled student can write or update feedback through a `ModelForm` exposing only the text. The course comes from the URL and the student from the session. `update_or_create` uses that pair to save an entry, so submitting the form again updates it. Feedback is visible to signed-in members browsing the course, including those considering enrolment, and the form explains this before submission. Output is escaped and paginated independently from materials. Removed and blocked students keep their existing feedback but cannot change it without active enrolment.
 
-Teachers search the Members page by username, first name or surname. Each word must match at least one of those fields, so a query such as “Prof Grant” can span first and last name. I used `Q` expressions to combine the alternatives within each word [6]. Results retain the directory's exclusions for inactive and administrator accounts, and do not expose email addresses. Students can still browse member home pages; supplying a non-empty search query as a student returns a permission error. Search text is limited to 150 characters, and pagination keeps it in the URL.
+Teachers search the Members page by username, first name or surname. Each word must match at least one of those fields, so a query such as “Minerva McGonagall” can span first and last name. I used `Q` expressions to combine the alternatives within each word [6]. Results retain the directory's exclusions for inactive and administrator accounts, and do not expose email addresses. Students can still browse member home pages; supplying a non-empty search query as a student returns a permission error. Search text is limited to 150 characters, and pagination keeps it in the URL.
 
 ### Removing and blocking students
 
@@ -228,7 +226,7 @@ Swagger's Try it out successfully updated a temporary account using the session 
 
 ## 11. Current local setup
 
-The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. The main dependencies are Django 5.2.17, DRF 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, Channels 4.3.2, Daphne 4.2.3 and drf-spectacular 0.29.0. The local Redis server is version 8.8.0. Pillow supports photo uploads, pypdf checks course materials, and Celery/Redis handle notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Railway support adds psycopg for PostgreSQL, dj-database-url for its supplied connection string, and WhiteNoise for static assets. `requirements.txt` pins these packages and their dependencies. Redis must be installed separately for local use.
+The development environment is macOS 26.6.2 with Python 3.12.9. The main dependencies are Django 5.2.17, DRF 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, Channels 4.3.2, Daphne 4.2.3 and drf-spectacular 0.29.0. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Psycopg provides the deployed PostgreSQL connection, dj-database-url reads it from the environment, and WhiteNoise serves collected static assets. `requirements.txt` pins the packages and their dependencies.
 
 From the project directory, create an environment and install the dependencies:
 
@@ -250,7 +248,7 @@ redis-server --bind 127.0.0.1 --dir /tmp --dbfilename studyroom-redis.rdb
 celery -A studyroom worker --loglevel=INFO --pool=solo
 ```
 
-The local worker uses one process, suitable for the small SQLite demonstration. Redis listens on port 6379, database 0, with a `studyroom` task queue. Its development snapshot is in `/tmp`; deployment will need persistent storage. If Redis is already running on that port, use the existing local instance. Chat uses the same Redis server with a separate `studyroom-chat` key prefix. Daphne is first in `INSTALLED_APPS`, so `manage.py runserver` now serves ASGI and accepts WebSockets. Tests do not require Redis or Celery.
+The local worker uses one process and a `studyroom` queue. Chat shares Redis with a separate key prefix. Daphne is first in `INSTALLED_APPS`, so `manage.py runserver` serves ASGI and accepts WebSockets. Tests do not require Redis or Celery.
 
 Open `http://127.0.0.1:8000/`. Registration is at `/accounts/register/`, login at `/accounts/login/`, the teacher student list at `/students/`, and administration at `/admin/`. Run the tests with `python manage.py test`; no demo-data loading is required for tests.
 
@@ -258,33 +256,41 @@ After login, Members opens `/members/` and My home opens the current user's `/me
 
 Courses opens `/courses/`; My courses opens `/courses/mine/`. A teacher can create a course, then upload its materials and view its roster from the detail page. A student sees an Enrol button until they have joined, after which the materials become available. Course files are stored in `media/course_materials/` and must also be included when copying the populated application.
 
-The demo course, Database practice, belongs to Prof Grant and contains a sample PDF called Week one exercise. Bob and John are enrolled; Alice is not, allowing both download permission cases to be tried.
+The Potions course belongs to Professor Snape and contains a matching Potion ingredients PDF. Harry, Ron and Hermione are enrolled. Draco is blocked from Professor McGonagall's Transfiguration course, allowing the normal and blocked permission cases to be tried.
 
-As Bob, open Database practice and choose Write or update your feedback. As Prof Grant, open Members to search, or the course's enrolled-student list to remove/block Bob. Each action explains its effect before confirmation. To restore access after a block, unblock Bob and then log in as Bob to enrol again.
+As Harry, open Potions and choose Write or update your feedback. As Professor Snape, open Members to search, or the course roster to remove/block Harry. Each action explains its effect before confirmation. To restore access after a block, unblock the student and ask them to enrol again.
 
-Notifications opens `/courses/notifications/`. To demonstrate it, log in as Alice and enrol on Database practice, then check Prof Grant's inbox. Upload a new material as Prof Grant and refresh the enrolled student's inbox after the worker runs. Existing enrolments and files from before this feature do not create notices retroactively.
+Notifications opens `/courses/notifications/`. To demonstrate it, log in as Draco and enrol on Potions, then check Professor Snape's inbox. Upload a new material as Snape and refresh the enrolled student's inbox after the worker runs. Existing enrolments and files from before this feature do not create notices retroactively.
 
-To try chat, open Database practice as Prof Grant and as an enrolled student in a separate browser profile or private window. Choose Open course chat on each course page and exchange messages. Refreshing restores the latest 50 messages. An unenrolled or blocked student cannot open the chat page or socket.
+To try chat, open Potions as Professor Snape and Harry in separate browser sessions. Choose Open course chat on each course page and exchange messages. Refreshing restores the latest 50 messages. An unenrolled or blocked student cannot open the chat page or socket.
 
-For the API, log in normally and open `/api/users/` or `/api/users/me/` in the browser. Swagger is at `/api/docs/`, with the schema at `/api/schema/`. In Swagger, expand PATCH `/api/users/me/`, choose Try it out, enter e.g. `{"biography": "Practising Django."}` and Execute. The normal login session and CSRF token are used automatically. A separate JSON client must send the session cookie and `X-CSRFToken` for PATCH.
+For the API, log in and open `/api/users/` or `/api/users/me/`. Swagger is at `/api/docs/`, with the schema at `/api/schema/`. Its PATCH `/api/users/me/` operation can update the current biography. A separate JSON client must send the session cookie and `X-CSRFToken`.
 
 The demo loader supplies these accounts:
 
 | Username | Account |
 | --- | --- |
-| bob | Student, Bob |
-| alice | Student, Alice |
-| john | Student, John |
-| grant | Teacher, Prof Grant |
-| mark | Teacher, Mark |
+| harry | Student, Harry Potter |
+| ron | Student, Ron Weasley |
+| hermione | Student, Hermione Granger |
+| draco | Student, Draco Malfoy |
+| snape | Teacher, Professor Snape |
+| mcgonagall | Teacher, Professor McGonagall |
+| admin | Django administrator |
 
-For an empty database, run `python load_data.py`. The accounts use `password123!`, stored with Django's password hashing. This shared password is limited to non-administrator demonstration accounts. The script uses `get_or_create` to preserve later profile edits and moderation state. It supplies statuses, feedback, saved chat messages, a PDF and example notices without requiring a worker. A second teacher and course demonstrate separate ownership; Alice starts blocked from that course. Re-running the script creates missing examples rather than resetting later edits. The database is excluded from Git but will be included, together with the required media, in the submission ZIP. The virtual environment will be excluded from that ZIP.
+For an empty database, run `python load_data.py`. All listed accounts use `password123!`, stored with Django's password hashing; `/admin/` is the administrator login. The script uses `get_or_create` to preserve later profile edits and moderation state. It supplies statuses, feedback, saved chat messages, two PDFs and example notices without requiring a worker. Re-running it creates missing examples rather than resetting later edits. The database and media will be included in the submission ZIP; the virtual environment will not.
 
-I rehearsed setup in a separate project copy with a fresh virtual environment, database and media directory. Installation, migrations, all 63 tests and schema validation passed; the package dependency check found no conflicts. Running the loader twice kept record counts stable and preserved deliberately changed passwords, biography, block state and notification read state. `README.md` provides the shorter setup and demonstration walkthrough.
+I rehearsed setup in a fresh project copy. Installation, migrations, all 63 tests and schema validation passed, and the dependency check found no conflicts. Running the loader twice kept counts stable and preserved changed passwords, biographies and moderation state. `README.md` provides the shorter walkthrough.
 
-## 12. Deployment plan
+## 12. Deployment
 
-> Planning note: Railway was selected because one project can contain the ASGI web service, PostgreSQL, Redis and a Celery worker [14]. A volume mounted on the web service preserves uploaded files [15]. The repository now contains its build and start commands, but the live deployment has not yet been carried out. After deployment I will verify HTTPS/WSS, permissions, uploads and persistence across restarts, then replace this note with the observed result.
+I first deployed the application on Railway. Its managed PostgreSQL and Redis services made the first setup quick, but the free allowance was time-limited. I do not know whether the coursework will be marked in one month or four months, so after reading the usage terms I decided that leaving it there risked either an unavailable demonstration or an unexpected charge.
+
+I moved the final deployment to an Oracle Cloud Ubuntu 24.04 VM using its Always Free resources and the DuckDNS name `edoardo-studyroom.duckdns.org`. I had used the same basic VM, Docker Compose and DuckDNS approach for the website of my girlfriend's father, where the main requirement was to keep the running cost at zero. That earlier application was simpler, using Streamlit with Supabase as its database, but the experience made the server and DNS work familiar. Studyroom needed a larger Compose setup because it also runs PostgreSQL, Redis, a Celery worker and an ASGI web process.
+
+The same application image is used for Daphne and Celery, reducing differences between the two Python processes. PostgreSQL, Redis and uploaded media use named volumes, while the database and broker have no public ports. Caddy is the only public service and provides HTTPS, redirects HTTP, and proxies both normal requests and secure WebSockets. Environment variables hold the domain, database password and Django secret outside Git. The web startup collects static files, applies migrations and runs the repeatable data loader before Daphne.
+
+I built and exercised the ARM64 image locally before copying the setup to the VM. This exposed an incompatible `cryptography` wheel, which I replaced with a compatible maintained release rather than discovering it on the live server. On Oracle I confirmed HTTPS login, PostgreSQL and Redis health, the Celery worker, file access and two-way WSS chat. The live application is available at the DuckDNS address. Docker Compose makes the deployment repeatable, although one free VM is still a single point of failure and requires me to apply updates and monitor storage myself [14–16].
 
 ## References
 
@@ -304,8 +310,9 @@ I rehearsed setup in a separate project copy with a fresh virtual environment, d
 11. drf-spectacular, [Documentation](https://drf-spectacular.readthedocs.io/en/latest/readme.html).
 12. Django documentation, [View decorators](https://docs.djangoproject.com/en/5.2/topics/http/decorators/).
 13. Django documentation, [The admin site](https://docs.djangoproject.com/en/5.2/ref/contrib/admin/).
-14. Railway documentation, [Deploy a Django app](https://docs.railway.com/guides/django).
-15. Railway documentation, [Using volumes](https://docs.railway.com/volumes).
+14. Docker documentation, [Control startup order](https://docs.docker.com/compose/how-tos/startup-order/).
+15. Caddy documentation, [Automatic HTTPS](https://caddyserver.com/docs/automatic-https).
+16. Oracle Cloud documentation, [Always Free Resources](https://docs.oracle.com/iaas/Content/FreeTier/freetier.htm).
 
 ## 13. Critical evaluation
 
