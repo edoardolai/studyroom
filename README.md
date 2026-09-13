@@ -86,54 +86,49 @@ There are 63 tests. They use temporary data and do not require Redis or Celery.
 same model diagram embedded in the report. The final report PDF and video are
 separate deliverables.
 
-## Railway deployment
+## Oracle VM deployment
 
-The deployed project uses four Railway services: the Django web service,
-PostgreSQL, Redis and a Celery worker. Only the web service needs a public domain.
+The production setup uses Docker Compose on an Ubuntu 24.04 VM. Caddy handles
+HTTPS and forwards HTTP and WebSocket connections to Daphne. PostgreSQL, Redis
+and the Celery worker are kept on the private Docker network.
 
-First create an empty GitHub repository. Do not initialise it with another README
-or `.gitignore`, then push this repository:
-
-```sh
-git remote add origin https://github.com/YOUR-USERNAME/studyroom.git
-git push -u origin master
-```
-
-Create a blank Railway project and add PostgreSQL and Redis from the database
-menu. Add the GitHub repository as a service and name it `web`. In its Variables
-tab add:
-
-```text
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-REDIS_URL=${{Redis.REDIS_URL}}
-DJANGO_DEBUG=False
-SECRET_KEY=your-long-random-secret
-```
-
-A suitable secret can be generated locally without storing it in Git:
+Point a DNS name at the VM and allow inbound TCP ports 80 and 443 in the Oracle
+network security rules. On a new Ubuntu server, install Git and Docker Engine from
+Docker's Ubuntu repository, then clone the project:
 
 ```sh
-python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+git clone https://github.com/edoardolai/studyroom.git
+cd studyroom
+cp .env.example .env
 ```
 
-Set the web service's custom start command to `./start.sh`. The build command is
-read from `railway.json`. Attach a volume to this service at `/app/media`; this
-keeps profile photos and course files after a restart. Under Networking, generate
-a Railway domain. Railway supplies that domain to Django automatically.
-
-Add the same GitHub repository to the project a second time and name this service
-`worker`. Give it the same four variables and set its custom start command to:
+Generate two values and copy them into `.env`. The first is the Django secret and
+the second is the PostgreSQL password:
 
 ```sh
-celery -A studyroom worker --loglevel=INFO --pool=solo
+openssl rand -hex 32
+openssl rand -hex 24
+nano .env
 ```
 
-The worker needs no public domain or volume. Apply the staged changes and deploy.
-The web start script collects static files, runs migrations and loads the repeatable
-demo data before Daphne. It then listens on Railway's supplied port and supports
-both HTTP and WebSockets.
+Set `DOMAIN` to the public DNS name. Do not commit `.env`. Start the application:
 
-After deployment, test login, one protected download, chat in two sessions, and a
-material notification. Upload a small file, redeploy the web service and check the
-file again to confirm that the volume is persistent. PostgreSQL and Redis should
-remain private inside the Railway project.
+```sh
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100 web worker caddy
+```
+
+The first start collects static files, runs migrations and loads the repeatable
+demo data before Daphne starts. The named Docker volumes preserve PostgreSQL,
+Redis, uploaded files and Caddy certificates. To deploy a later commit:
+
+```sh
+git pull
+docker compose up -d --build
+```
+
+After deployment, test login, one protected download, chat in two browser
+sessions and a material notification. Upload a small file, restart with
+`docker compose restart`, then check the file and chat history again to confirm
+that the volumes are persistent.

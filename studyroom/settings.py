@@ -31,9 +31,9 @@ SECRET_KEY = os.environ.get(
 DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 
 ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "healthcheck.railway.app"]
-railway_domain = os.environ.get("RAILWAY_PUBLIC_DOMAIN")
-if railway_domain:
-    ALLOWED_HOSTS.append(railway_domain)
+public_domain = os.environ.get("PUBLIC_HOST") or os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+if public_domain:
+    ALLOWED_HOSTS.append(public_domain)
 
 
 # Application definition
@@ -150,7 +150,9 @@ STORAGES = {
     },
 }
 
-MEDIA_ROOT = Path(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", BASE_DIR / "media"))
+MEDIA_ROOT = Path(os.environ.get(
+    "MEDIA_ROOT", os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", BASE_DIR / "media")
+))
 MEDIA_URL = "/media/"
 
 # Default primary key field type
@@ -174,8 +176,8 @@ SECURE_SSL_REDIRECT = not DEBUG
 SECURE_HSTS_SECONDS = 3600 if not DEBUG else 0
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
-if railway_domain:
-    CSRF_TRUSTED_ORIGINS = [f"https://{railway_domain}"]
+if public_domain:
+    CSRF_TRUSTED_ORIGINS = [f"https://{public_domain}"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
