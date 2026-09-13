@@ -1,6 +1,6 @@
 # Studyroom — CM3035 Final Coursework
 
-> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation, notifications, course chat and the user REST API implemented. Final integration, packaging and deployment are still pending. The working target is 60–65 tests for the finished application, with 63 currently retained. This note tracks work remaining and is not part of the submission text.
+> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation, notifications, course chat and the user REST API implemented. Clean installation and demo-data preparation are complete; final submission packaging and deployment are still pending. The working target is 60–65 tests for the finished application, with 63 currently retained. This note tracks work remaining and is not part of the submission text.
 
 ## 1. Introduction and development approach
 
@@ -128,6 +128,8 @@ Login and logout use Django's built-in views and session authentication. Logout 
 
 The first teacher function is a paginated list of active student accounts. It shows username and real name, but not email or password information. Anonymous requests go to login; authenticated students receive 403. The template hides the student-list link from students, but the view checks the role independently, so entering the URL directly does not bypass the restriction. Teacher status is separate from `is_staff`: teachers have application permissions, while the staff flag controls entry to Django admin.
 
+I used `login_required` to redirect anonymous visitors before a protected view runs, following the lectures' access-control pattern. Method decorators make each view's supported actions explicit: `require_POST` for enrolment and status submission, `require_http_methods(["GET", "POST"])` for forms, and `require_safe` for reading pages [12]. Unsupported methods receive HTTP 405. These checks do not establish course ownership or replace CSRF protection; the view still checks the role and relevant record. In admin, `admin.register` associates a model with its configuration, while `admin.display` labels the protected photo/material links [13].
+
 The list covers active students across the site. To keep the table manageable as accounts are added, I used Django's `Paginator` to divide it into pages of 25. Since the page only displays records, `require_safe` limits it to GET and HEAD requests. The forms use `as_div` to render Django's fields and errors inside containers styled by the stylesheet.
 
 ## 4. Profiles, discovery and status updates
@@ -226,12 +228,14 @@ Swagger's Try it out successfully updated a temporary account using the session 
 
 ## 11. Current local setup
 
-The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, the redis Python client 6.4.0, Channels 4.3.2, channels-redis 4.3.0, Daphne 4.2.3, drf-spectacular 0.29.0 and drf-spectacular-sidecar 2026.9.1. The local Redis server is version 8.8.0. Pillow was added with photo uploads, pypdf with course materials, and Celery/Redis with notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Exact release dependencies will be captured in `requirements.txt` for the clean-install rehearsal.
+The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, the redis Python client 6.4.0, Channels 4.3.2, channels-redis 4.3.0, Daphne 4.2.3, drf-spectacular 0.29.0 and drf-spectacular-sidecar 2026.9.1. The local Redis server is version 8.8.0. Pillow was added with photo uploads, pypdf with course materials, and Celery/Redis with notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. `requirements.txt` pins the installed Python packages, including their dependencies. Redis must be installed separately.
 
-From the project directory, activate the existing local environment and run:
+From the project directory, create an environment and install the dependencies:
 
 ```sh
+python3.12 -m venv .venv
 source .venv/bin/activate
+python -m pip install -r requirements.txt
 python manage.py migrate
 python manage.py runserver
 ```
@@ -264,16 +268,19 @@ To try chat, open Database practice as morgan and as an enrolled student in a se
 
 For the API, log in normally and open `/api/users/` or `/api/users/me/` in the browser. Swagger is at `/api/docs/`, with the schema at `/api/schema/`. In Swagger, expand PATCH `/api/users/me/`, choose Try it out, enter e.g. `{"biography": "Practising Django."}` and Execute. The normal login session and CSRF token are used automatically. A separate JSON client must send the session cookie and `X-CSRFToken` for PATCH.
 
-The local database currently contains these demonstration accounts:
+The demo loader supplies these accounts:
 
 | Username | Account |
 | --- | --- |
 | alex | Student, Alex Wood |
 | sam | Student, Sam Reed |
 | morgan | Teacher, Morgan Shaw |
+| riley | Teacher, Riley Taylor |
 | admin | Site administrator |
 
-Their local demonstration password is `Studyroom-demo-482!`. They were created through Django's user model, with `set_password` used to store hashed passwords. A repeatable loader will be introduced once the course demo data has a settled shape. The database is excluded from Git but will be included, together with the required media, in the submission ZIP. The virtual environment will be excluded from that ZIP.
+For an empty database, run `python load_data.py`. New accounts use `Studyroom-demo-482!`, stored with Django's password hashing. The script uses `get_or_create` to preserve existing passwords, profile edits and moderation state. It supplies statuses, feedback, saved chat messages, a PDF and example notices without requiring a worker. A second teacher and course demonstrate separate ownership; sam starts blocked from that course. Re-running the script creates missing examples rather than resetting later edits. The database is excluded from Git but will be included, together with the required media, in the submission ZIP. The virtual environment will be excluded from that ZIP.
+
+I rehearsed setup in a separate project copy with a fresh virtual environment, database and media directory. Installation, migrations, all 63 tests and schema validation passed; the package dependency check found no conflicts. Running the loader twice kept record counts stable and preserved deliberately changed passwords, biography, block state and notification read state. `README.md` provides the shorter setup and demonstration walkthrough.
 
 ## 12. Deployment plan
 
@@ -295,6 +302,8 @@ Their local demonstration password is `Studyroom-demo-482!`. They were created t
 
 10. Django REST framework, [Generic views](https://www.django-rest-framework.org/api-guide/generic-views/) and [Session authentication](https://www.django-rest-framework.org/api-guide/authentication/#sessionauthentication).
 11. drf-spectacular, [Documentation](https://drf-spectacular.readthedocs.io/en/latest/readme.html).
+12. Django documentation, [View decorators](https://docs.djangoproject.com/en/5.2/topics/http/decorators/).
+13. Django documentation, [The admin site](https://docs.djangoproject.com/en/5.2/ref/contrib/admin/).
 
 ## 13. Critical evaluation
 
