@@ -50,26 +50,28 @@ The following accounts all use `password123!`.
 
 | Username | Role |
 | --- | --- |
-| bob | Student, enrolled on both example courses |
-| alice | Student, initially blocked from Web application design |
-| john | Student, enrolled on Database practice |
-| grant | Teacher Prof Grant, owns Database practice |
-| mark | Teacher, owns Web application design |
+| harry | Harry Potter, enrolled on both example courses |
+| ron | Ron Weasley, enrolled on Potions |
+| hermione | Hermione Granger, enrolled on Potions |
+| draco | Draco Malfoy, initially blocked from Transfiguration |
+| snape | Professor Snape, owns Potions |
+| mcgonagall | Professor McGonagall, owns Transfiguration |
+| admin | Django administrator |
 
 Existing databases may differ after you have tried enrolment or moderation.
 Running the loader does not undo those changes or reset passwords.
 
 ## Walkthrough
 
-1. Log in as bob to view a profile, status updates, courses and feedback.
-2. Log in as grant in a separate browser session. Open Database practice's roster
+1. Log in as harry to view a profile, status updates, courses and feedback.
+2. Log in as snape in a separate browser session. Open Potions' roster
    and material upload page.
-3. Open Database practice's chat in both sessions and exchange messages. Refresh
+3. Open Potions' chat in both sessions and exchange messages. Refresh
    to check saved history.
-4. Use alice to enrol on Database practice, then check grant's Notifications page.
-   Upload a material as grant and refresh the enrolled student's inbox.
-5. Use mark to see the separate course roster and alice's block. Unblock alice,
-   then enrol again as alice to demonstrate restored access.
+4. Use draco to enrol on Potions, then check snape's Notifications page.
+   Upload a material as snape and refresh the enrolled student's inbox.
+5. Use mcgonagall to see the Transfiguration roster and draco's block. Unblock
+   draco, then enrol again as draco to demonstrate restored access.
 6. After login, open `/api/docs/` for Swagger or `/api/users/me/` for the browsable
    API. PATCH supports changes to your name and biography.
 
