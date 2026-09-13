@@ -162,7 +162,7 @@ Course logic lives in the `courses` app. The HTML views remain short functions; 
 
 An enrolled student can write or update feedback through a `ModelForm` exposing only the text. The course comes from the URL and the student from the session. `update_or_create` uses that pair to save an entry, so submitting the form again updates it. Feedback is visible to signed-in members browsing the course, including those considering enrolment, and the form explains this before submission. Output is escaped and paginated independently from materials. Removed and blocked students keep their existing feedback but cannot change it without active enrolment.
 
-Teachers search the Members page by username, first name or surname. Each word must match at least one of those fields, so a query such as “Alex Wood” can span first and last name. I used `Q` expressions to combine the alternatives within each word [6]. Results retain the directory's exclusions for inactive and administrator accounts, and do not expose email addresses. Students can still browse member home pages; supplying a non-empty search query as a student returns a permission error. Search text is limited to 150 characters, and pagination keeps it in the URL.
+Teachers search the Members page by username, first name or surname. Each word must match at least one of those fields, so a query such as “Prof Grant” can span first and last name. I used `Q` expressions to combine the alternatives within each word [6]. Results retain the directory's exclusions for inactive and administrator accounts, and do not expose email addresses. Students can still browse member home pages; supplying a non-empty search query as a student returns a permission error. Search text is limited to 150 characters, and pagination keeps it in the URL.
 
 ### Removing and blocking students
 
@@ -258,13 +258,13 @@ After login, Members opens `/members/` and My home opens the current user's `/me
 
 Courses opens `/courses/`; My courses opens `/courses/mine/`. A teacher can create a course, then upload its materials and view its roster from the detail page. A student sees an Enrol button until they have joined, after which the materials become available. Course files are stored in `media/course_materials/` and must also be included when copying the populated application.
 
-The demo course, Database practice, belongs to morgan and contains a sample PDF called Week one exercise. alex is enrolled; sam is not, allowing both download permission cases to be tried.
+The demo course, Database practice, belongs to Prof Grant and contains a sample PDF called Week one exercise. Bob and John are enrolled; Alice is not, allowing both download permission cases to be tried.
 
-As alex, open Database practice and choose Write or update your feedback. As morgan, open Members to search, or the course's enrolled-student list to remove/block alex. Each action explains its effect before confirmation. To restore access after a block, unblock alex and then log in as alex to enrol again.
+As Bob, open Database practice and choose Write or update your feedback. As Prof Grant, open Members to search, or the course's enrolled-student list to remove/block Bob. Each action explains its effect before confirmation. To restore access after a block, unblock Bob and then log in as Bob to enrol again.
 
-Notifications opens `/courses/notifications/`. To demonstrate it, log in as sam and enrol on Database practice, then check morgan's inbox. Upload a new material as morgan and refresh the enrolled student's inbox after the worker runs. Existing enrolments and files from before this feature do not create notices retroactively.
+Notifications opens `/courses/notifications/`. To demonstrate it, log in as Alice and enrol on Database practice, then check Prof Grant's inbox. Upload a new material as Prof Grant and refresh the enrolled student's inbox after the worker runs. Existing enrolments and files from before this feature do not create notices retroactively.
 
-To try chat, open Database practice as morgan and as an enrolled student in a separate browser profile or private window. Choose Open course chat on each course page and exchange messages. Refreshing restores the latest 50 messages. An unenrolled or blocked student cannot open the chat page or socket.
+To try chat, open Database practice as Prof Grant and as an enrolled student in a separate browser profile or private window. Choose Open course chat on each course page and exchange messages. Refreshing restores the latest 50 messages. An unenrolled or blocked student cannot open the chat page or socket.
 
 For the API, log in normally and open `/api/users/` or `/api/users/me/` in the browser. Swagger is at `/api/docs/`, with the schema at `/api/schema/`. In Swagger, expand PATCH `/api/users/me/`, choose Try it out, enter e.g. `{"biography": "Practising Django."}` and Execute. The normal login session and CSRF token are used automatically. A separate JSON client must send the session cookie and `X-CSRFToken` for PATCH.
 
@@ -272,13 +272,13 @@ The demo loader supplies these accounts:
 
 | Username | Account |
 | --- | --- |
-| alex | Student, Alex Wood |
-| sam | Student, Sam Reed |
-| morgan | Teacher, Morgan Shaw |
-| riley | Teacher, Riley Taylor |
-| admin | Site administrator |
+| bob | Student, Bob |
+| alice | Student, Alice |
+| john | Student, John |
+| grant | Teacher, Prof Grant |
+| mark | Teacher, Mark |
 
-For an empty database, run `python load_data.py`. New accounts use `Studyroom-demo-482!`, stored with Django's password hashing. The script uses `get_or_create` to preserve existing passwords, profile edits and moderation state. It supplies statuses, feedback, saved chat messages, a PDF and example notices without requiring a worker. A second teacher and course demonstrate separate ownership; sam starts blocked from that course. Re-running the script creates missing examples rather than resetting later edits. The database is excluded from Git but will be included, together with the required media, in the submission ZIP. The virtual environment will be excluded from that ZIP.
+For an empty database, run `python load_data.py`. The accounts use `password123!`, stored with Django's password hashing. This shared password is limited to non-administrator demonstration accounts. The script uses `get_or_create` to preserve later profile edits and moderation state. It supplies statuses, feedback, saved chat messages, a PDF and example notices without requiring a worker. A second teacher and course demonstrate separate ownership; Alice starts blocked from that course. Re-running the script creates missing examples rather than resetting later edits. The database is excluded from Git but will be included, together with the required media, in the submission ZIP. The virtual environment will be excluded from that ZIP.
 
 I rehearsed setup in a separate project copy with a fresh virtual environment, database and media directory. Installation, migrations, all 63 tests and schema validation passed; the package dependency check found no conflicts. Running the loader twice kept record counts stable and preserved deliberately changed passwords, biography, block state and notification read state. `README.md` provides the shorter setup and demonstration walkthrough.
 
