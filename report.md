@@ -2,39 +2,39 @@
 
 ## 1. Introduction and development approach
 
-Studyroom is an eLearning application being built with Django. The coursework requires student and teacher accounts, course enrolment and materials, feedback, notifications, a user REST interface and real-time chat. The first development step establishes accounts and authentication, since the later features need to know who is making a request and what that person may do.
+I built Studyroom as a Django eLearning application. I needed to cover student and teacher accounts, courses, materials, feedback, notifications, a REST interface and real-time chat. I started from accounts and authentication because every later feature needed to know who was making the request and what that user was allowed to do.
 
-Development started with the project skeleton, then the custom user and migration, registration, and login/logout. The teacher student list provided the first place to test different permissions. The browser pages use Django templates and forms, with views in `views.py` and registration validation in `forms.py`.
+I created the project skeleton first, followed by the custom user model and migration, registration, and login/logout. I used the teacher student list as the first place to prove that the two roles had different permissions. For the browser pages I used Django templates and forms, with normal views in `views.py` and registration validation in `forms.py`.
 
-The next step added member home pages and biography editing. Photo uploads followed once the editing workflow had ownership tests, then status updates added the first one-to-many relationship. These changes have separate migrations, so existing accounts receive the new optional fields without needing to be recreated.
+Next I added member home pages and biography editing. I added photo uploads after the editing workflow had ownership tests, then status updates introduced the first one-to-many relationship. I kept these changes in separate migrations so I could update existing accounts without recreating them.
 
-Courses were built in three steps: creation and browsing, enrolment and rosters, then uploaded materials. This order gave each upload a course to belong to and an established permission rule for downloading it. The course work also exposed a repeated home-page context between normal viewing and an invalid status submission; a small helper now supplies the same course information to both.
+I built courses in three steps: creation and browsing, enrolment and rosters, and finally uploaded materials. This order meant that every upload already had a course and an established download rule. During this work I found repeated home-page context in the normal view and the invalid status form path, so I moved that small piece into a helper.
 
-Teacher search came next, using the existing member directory. Feedback then added a form for enrolled students, followed by removal and blocking controls on the roster. Adding blocking required revisiting downloads and home-page queries: a stored enrolment could now represent a block, so checking only whether the row existed was no longer enough.
+I added teacher search to the existing member directory, then feedback for enrolled students and the remove/block controls on the roster. Blocking made me revisit downloads and home-page queries because an enrolment row could now mean that access was blocked. I could no longer treat the existence of that row as enough evidence of access.
 
 ## 2. Accounts and database design
 
-The first model is `accounts.User`, which extends Django's `AbstractUser`. It retains Django's username, password, name and email fields and adds a `role` field with two values: student and teacher. One field makes the two account types mutually exclusive. The field choices validate form input; a database check constraint also rejects other role values when a write bypasses a form.
+I made `accounts.User` extend Django's `AbstractUser`. This kept Django's username, password, name and email fields, while I added a `role` with the two allowed values, student and teacher. One field makes the account types mutually exclusive. I used field choices for form validation and a database constraint for writes which bypass a form.
 
 I used a custom user because the role belongs to the account and is needed whenever permissions are checked. `AbstractUser` keeps the standard authentication behaviour while allowing the additional field [1]. Configuring it before the first migration avoids replacing the user table once other models reference it. The admin extends `UserAdmin`, including the role on both its creation and editing forms.
 
-To keep role values and their display labels together, I used `TextChoices`. A `CheckConstraint` enforces the two-value rule in SQLite, including writes made outside a form. The views then check the stored role to decide whether the user can perform an action.
+I used `TextChoices` to keep each role value beside its display label. I also added a `CheckConstraint` so SQLite rejects another value even if the write happens outside a form. I then check the stored role in the views before allowing an action.
 
-Profile data stays on `User`: a biography of up to 1,000 characters and an optional photo. Both describe one account, so a separate profile table would add a join without a separate lifecycle to manage. The photo column stores a file path; the image itself is saved under `MEDIA_ROOT`.
+I kept the biography and optional photo on `User` because both belong to exactly one account. A separate profile table would add another join without giving this data a separate lifecycle. The photo column stores its path, while the file is saved under `MEDIA_ROOT`.
 
-Status updates belong in their own table because an account can post many of them. Each `StatusUpdate` stores its author, text and creation time. The author's name is read through the foreign key rather than copied into every update, so a name change does not leave old posts with stale names. Deleting an account cascades to its updates, which have no purpose without their author. The default ordering uses creation time and then primary key, both descending, so updates have a consistent order even when timestamps match.
+I placed status updates in their own table because one account can post many updates. Each `StatusUpdate` stores the author, text and creation time. I read the author's name through the foreign key instead of copying it, so changing a name also changes how old posts are displayed. I used cascade deletion because an update has no purpose without its author, and I ordered updates by creation time and primary key so ties are predictable.
 
-`Course` has one teacher, a title, a description and a creation time. Its teacher uses `PROTECT`: deleting a teacher should not silently remove courses that students have joined. The teacher's name is retrieved through the relationship. Titles are not unique, since different teachers can reasonably offer courses with the same title; URLs identify courses by primary key.
+For `Course`, I stored one teacher, a title, a description and the creation time. I used `PROTECT` for the teacher because deleting an account should not silently delete a course which students joined. I did not make titles unique because two teachers could reasonably use the same title; the URL uses the primary key.
 
-`Enrolment` links a student and a course and records when they joined. A unique constraint on the pair prevents duplicate participation, including writes outside the web form. Its `is_blocked` flag defaults to false, preserving existing enrolments when the migration runs. A blocked row records that the student cannot rejoin; removal deletes the row. Course and student deletion cascade to their enrolments. Model validation checks the account role for course owners and enrolments; the web views separately enforce the role and assign the account from the session.
+I used `Enrolment` to join a student and course and record when they joined. A unique constraint on the pair stops duplicate enrolment. I added `is_blocked` with a false default so the migration preserved existing rows. A blocked row prevents re-enrolment, while removal deletes the row. I validate account roles in the model and still enforce them in the web views, where the account comes from the session.
 
-`CourseMaterial` stores a title, file path, upload time and course foreign key. The owning teacher is already available through the course, so it does not repeat that account reference. This structure keeps account details, course descriptions and individual materials in their respective tables, while enrolment represents the many-to-many student/course relationship.
+In `CourseMaterial` I stored the title, file path, upload time and course foreign key. I did not repeat the teacher because it is already available through the course. This keeps account, course and material data in their own tables, while enrolment represents the student/course many-to-many relationship.
 
-`Feedback` stores the student, course, text and last update time. A unique student/course pair gives each student one editable entry. It references the course and student directly, so removing an enrolment does not erase what the student wrote. Deleting the account or course does cascade to its feedback. The text is limited to 2,000 characters; no rating scale was needed for the written feedback requirement.
+For `Feedback`, I stored the student, course, text and last update time. I made the student/course pair unique to give each student one editable entry. I reference both records directly, so removing an enrolment does not erase earlier feedback. I limited the text to 2,000 characters and did not add a rating because the requirement only asks for written feedback.
 
-`ChatMessage` belongs to a course and an author, with text and creation time. The course itself identifies the room, so a separate room table would duplicate the relationship. Deleting a course or author cascades to their messages. The sender is assigned from the authenticated session, never from submitted JSON.
+I made each `ChatMessage` belong to a course and author. The course already identifies the chat room, so I did not add a separate room table. I assign the sender from the authenticated session rather than submitted JSON.
 
-The ER diagram shows these application fields and relationships. Django's supporting authentication and session tables are omitted.
+I show these fields and relationships in the ER diagram below. I left out Django's supporting authentication and session tables so the application model stays readable.
 
 ```mermaid
 erDiagram
@@ -120,7 +120,7 @@ erDiagram
 
 ## 3. Registration, authentication and permissions
 
-Public registration creates student accounts. Teacher accounts are created or promoted through the admin, because letting a registrant choose teacher would also let them grant themselves access to student records. The registration form extends `UserCreationForm` and explicitly lists username, first name, last name and email. It does not accept role or administration flags. The password fields and validation come from Django. After saving a valid account, the view redirects to login and displays a confirmation; invalid input returns the bound form with field errors.
+I made public registration create student accounts only. I create or promote teachers through the admin, because a teacher option on the public form would let anybody give themselves access to student records. I extended `UserCreationForm` and explicitly listed username, first name, last name and email. I left the password fields and validation to Django and did not accept role or administration flags.
 
 Login and logout use Django's built-in views and session authentication. Logout is a POST form with a CSRF token. Keeping the built-in login view also preserves its validation of the `next` destination: a user can return to a requested local page without the application redirecting them to an arbitrary external address supplied in the request.
 
@@ -132,9 +132,9 @@ The list covers active students across the site. To keep the table manageable as
 
 ## 4. Profiles, discovery and status updates
 
-The Members page gives students and teachers a way to find each other's home pages. It lists active accounts, excluding site administrators from the directory. Each home page shows the member's name, username, role, biography, photo and status history. These pages require login. Email addresses remain account information and are not rendered on the directory or another member's home page. This separates profile discovery from the teacher-only student list and its later course-management functions.
+I added the Members page so students and teachers can find each other's home pages. I list active accounts but leave site administrators out of the directory. Each home page shows the member's name, username, role, biography, photo and status history. I require login and keep email addresses out of the directory and other members' pages.
 
-Profile editing has one route, `/accounts/profile/edit/`, with no target account ID. The view passes `request.user` as the form instance, so editing always applies to the logged-in account. The form lists the editable fields explicitly. Submitting an extra username, role, email or administration flag does not change it. Successful edits redirect to the member's home page; invalid edits return the form and errors without saving the profile.
+I gave profile editing one route, `/accounts/profile/edit/`, with no target account ID. I pass `request.user` as the form instance, so an edit always applies to the logged-in account. The form lists the editable fields explicitly, which means an extra username, role, email or administration flag is ignored.
 
 Photos use an `ImageField` and Pillow to check image content. The upload form uses `multipart/form-data`, and the view passes `request.FILES` alongside `request.POST` [3]. I limited uploads to JPEG and PNG, 2 MB, and 4096 pixels on either side to keep profile images reasonably bounded. Checking the content as well as the extension rejects a GIF renamed to `.png`. The shared field validator also applies when the model is validated through an admin form. It rewinds the file after inspecting it so storage can read the complete upload.
 
@@ -146,11 +146,11 @@ The interface uses a shared template, labelled form fields and a small styleshee
 
 ## 5. Courses, enrolment and materials
 
-Members can browse course descriptions before joining. Teachers create courses through a `ModelForm` exposing only title and description; the view assigns the teacher. Students enrol with a CSRF-protected POST. `get_or_create` and the unique database constraint make a repeated submission return the existing enrolment instead of creating another one. My courses shows the teacher's own courses or the student's enrolments, depending on role.
+I let members browse course descriptions before joining. Teachers create courses through a `ModelForm` exposing only title and description, while the view assigns the teacher from the session. Students enrol with a CSRF-protected POST. I used `get_or_create` as well as the unique database constraint so a repeated submission returns the existing enrolment. My courses changes its result according to the member's role.
 
 The roster view checks that the requester is a teacher and retrieves the course filtered by that teacher. A different teacher cannot get a roster by changing the URL. Even enrolled students cannot open the roster. On home pages, teachers' courses are discoverable, while a student's enrolments are shown only to that student. These are different views of the same course relationships, rather than separately stored lists.
 
-Materials are uploaded by the course teacher. The form accepts a title and file, and the course comes from the authorised URL lookup rather than a submitted field. Downloads check the same owner/enrolment rule used to show the material list. Knowing a material ID or storage path is insufficient to retrieve it. The response sends the file as an attachment and disables caching. Course descriptions remain visible to unenrolled members, but material titles and links do not.
+I allow only the course teacher to upload materials. The form accepts a title and file, and I take the course from the authorised URL lookup instead of a submitted field. Downloads check the same owner/enrolment rule used for the material list, so knowing an ID or storage path is not enough. I keep descriptions public to signed-in members but hide material titles and links from unenrolled students.
 
 I used Pillow for JPEG/PNG checks and added `pypdf` to read PDF structure, rather than treating a `.pdf` extension as proof of a valid document. The PDF reader uses strict mode and requires an unencrypted document with at least one page [4]. Images must match their extension and fit within 4096 by 4096 pixels. All materials have a 10 MB limit. These checks reject unsupported, malformed and oversized uploads; they are not malware scanning. Strict PDF parsing can also reject a damaged document that a viewer would repair, so the user may need to export a clean copy.
 
@@ -212,15 +212,20 @@ I added `drf-spectacular` to generate OpenAPI from the views and serializers, wi
 
 ## 10. Testing
 
-The current suite contains 63 tests, run with `python manage.py test`. Tests use DRF's `APITestCase` and factory_boy, following the structure from my midterm. Factories provide predictable records and hashed passwords. Upload tests use temporary storage so they do not change real demonstration files.
+I wrote 63 automated tests and run them with `python manage.py test`. I used DRF's `APITestCase` and factory_boy in a similar structure to my midterm. The factories give me predictable records and correctly hashed passwords. Upload tests use temporary storage, so running the suite does not change the demonstration files. Following the lecturer's advice, I selected only eight representative tests to discuss here:
 
-Coverage focuses on the main workflows and ownership decisions: registration and login, profile editing, status posting, course creation/enrolment, material permissions, feedback, search and moderation. Invalid input and forged account IDs are checked where the application accepts changes. Separate database tests verify role values and duplicate enrolment constraints. Photo cleanup checks distinguish committed changes from rolled-back edits.
+1. Registration creates a student and ignores submitted teacher or administrator fields.
+2. A profile edit and status post always use the logged-in member, even if another account ID is submitted.
+3. Repeating an enrolment request does not create a duplicate record or a second teacher notification.
+4. An unenrolled, blocked or unrelated user cannot view or download protected course material.
+5. Feedback can only be written by an enrolled student, and a second submission updates the same entry.
+6. Course removal and blocking are limited to that course's teacher and immediately change the student's access.
+7. A WebSocket test uses Channels' `WebsocketCommunicator` [9] to check authorised delivery and saved chat history; the surrounding socket tests cover access changes.
+8. The REST test checks private-field filtering and confirms that a member can PATCH only their own allowed profile fields with CSRF protection.
 
-Four notification tests cover enrolment notices, private inboxes, material recipients and broker failure. The publisher is mocked while task logic uses the test database. Six asynchronous socket tests use Channels' `WebsocketCommunicator` [9] and an in-memory channel layer to check delivery/history, membership, invalid messages, blocking, logout and untrusted origins. Neither Redis nor Celery is required to run the tests.
+The whole suite also checks validation and less common permission paths, but listing each case would repeat the code rather than explain my testing choices. I mock the Celery publisher where needed and use an in-memory channel layer, so Redis and a worker are not needed during tests. All 63 tests passed.
 
-Five API tests cover authenticated member data, read-only detail records, own-profile updates, invalid PATCH data and CSRF enforcement. Tests that need CSRF use `APIClient(enforce_csrf_checks=True)` because the normal test client skips that check. All 63 tests passed. This is focused coverage, not an exhaustive test of every field boundary or Django behaviour.
-
-Separate teacher and student browser sessions exercised uploads, enrolment, feedback, moderation, Celery notifications and two-way WebSocket chat. Reloading restored chat history; blocking an open tab stopped its next message. Mobile-width checks found and fixed a long heading overflow. Swagger updated a temporary account with session and CSRF protection, while another member remained read-only. The OpenAPI schema also validated without warnings. These walkthroughs are not a complete accessibility or cross-browser audit.
+I also used separate teacher and student browser sessions for the full workflows. I tried uploads, enrolment, feedback, moderation, notifications and two-way chat. Reloading restored chat history, and blocking a student with their chat open stopped their next message. I checked the pages at a mobile width and used Swagger to update a temporary account while another member stayed read-only. These manual checks helped find integration and layout problems, but they are not a full accessibility or cross-browser audit.
 
 ## 11. Current local setup
 
@@ -323,7 +328,7 @@ After login, Members opens `/members/` and My home opens the current user's `/me
 
 Courses opens `/courses/`; My courses opens `/courses/mine/`. A teacher can create a course, then upload its materials and view its roster from the detail page. A student sees an Enrol button until they have joined, after which the materials become available. Course files are stored in `media/course_materials/` and must also be included when copying the populated application.
 
-The Potions course belongs to Professor Snape and contains a matching Potion ingredients PDF. Harry, Ron and Hermione are enrolled. Draco is blocked from Professor McGonagall's Transfiguration course, allowing the normal and blocked permission cases to be tried.
+The Potions course belongs to Professor Snape and contains a matching Potion ingredients PDF. Harry, Ron and Hermione are enrolled. Draco is blocked from Professor McGonagall's Transfiguration course, allowing the normal and blocked permission cases to be tried. The original seed PDFs are kept in `demo_materials/`; `load_data.py` copies them into `media/course_materials/`, where the populated database expects uploaded files. I kept these two locations separate so runtime uploads can change without removing the files needed to rebuild the demo.
 
 As Harry, open Potions and choose Write or update your feedback. As Professor Snape, open Members to search, or the course roster to remove/block Harry. Each action explains its effect before confirmation. To restore access after a block, unblock the student and ask them to enrol again.
 
@@ -383,11 +388,11 @@ I built and exercised the ARM64 image locally before copying the setup to the VM
 
 ## 13. Critical evaluation
 
-The account foundation reuses Django's password and session handling, leaving a small amount of application-specific code to inspect. The tests demonstrate that the role difference is enforced on a real page and cannot be selected through registration. Using one role field is sufficient for the coursework's two account types, but it would need reconsideration if a person could teach some courses and attend others as a student.
+I reused Django's password and session handling, which left me less application-specific security code to maintain. My tests show that the role difference is enforced on a real page and cannot be selected through registration. I think one role field is enough for the coursework's two account types, but I would reconsider it if one person could teach some courses and attend others as a student.
 
-Creating teachers through admin prevents self-assignment of teacher privileges, but each new teacher needs an administrator's action. Email format is checked, but ownership of the address is not verified. Login also has no application-level rate limiting. First and last names are required by registration but remain optional on the admin form, so an administrator can create incomplete records. These are limits to address before using the account workflow for real students.
+Creating teachers through admin prevents self-assignment of teacher privileges, but I accept that every new teacher needs an administrator's action. I check email format but do not verify who owns the address, and I have not added application-level login rate limiting. I would address these limits before using the account workflow for real students.
 
-Serving photos through Django keeps member access checks in one place, but makes the web process handle each image request. A larger deployment would need to measure that cost before choosing a different delivery method. Upload limits are validated after Django receives the request; they do not replace request-size limits at the production web server.
+I serve photos through Django to keep the member access check in one place, although this makes the web process handle every image request. For a larger deployment I would measure that cost before choosing another delivery method. My upload validation also runs after Django receives the request, so it does not replace a request-size limit at the web server.
 
 The database and filesystem remain separate systems, so a failed storage operation or transaction rollback can leave an orphan. Course-material changes through admin can also leave old files. Images are validated but not resized or stripped of metadata, and status updates have no user-facing edit or delete action.
 

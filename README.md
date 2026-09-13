@@ -84,6 +84,8 @@ python manage.py spectacular --file /tmp/studyroom-schema.yaml --validate --fail
 ```
 
 There are 63 tests. They use temporary data and do not require Redis or Celery.
+
+The same two example PDFs appear in `demo_materials/` and `media/course_materials/` for a reason. `demo_materials/` contains the original files used by `load_data.py` when building a fresh database. `media/course_materials/` contains the working copies referenced by the supplied populated database. Keeping the loader sources separate means that changing or deleting an uploaded file does not break a later rebuild of the demonstration data.
 `report.md` contains the development discussion; `er_diagram.mmd` contains the
 same model diagram embedded in the report. The final report PDF and video are
 separate deliverables.
