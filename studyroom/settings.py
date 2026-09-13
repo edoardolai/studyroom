@@ -30,8 +30,8 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() == "true"
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "healthcheck.railway.app"]
-public_domain = os.environ.get("PUBLIC_HOST") or os.environ.get("RAILWAY_PUBLIC_DOMAIN")
+ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
+public_domain = os.environ.get("PUBLIC_HOST")
 if public_domain:
     ALLOWED_HOSTS.append(public_domain)
 
@@ -150,9 +150,7 @@ STORAGES = {
     },
 }
 
-MEDIA_ROOT = Path(os.environ.get(
-    "MEDIA_ROOT", os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", BASE_DIR / "media")
-))
+MEDIA_ROOT = Path(os.environ.get("MEDIA_ROOT", BASE_DIR / "media"))
 MEDIA_URL = "/media/"
 
 # Default primary key field type
