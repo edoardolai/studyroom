@@ -220,13 +220,78 @@ Four notification tests cover enrolment notices, private inboxes, material recip
 
 Five API tests cover authenticated member data, read-only detail records, own-profile updates, invalid PATCH data and CSRF enforcement. Tests that need CSRF use `APIClient(enforce_csrf_checks=True)` because the normal test client skips that check. All 63 tests passed. This is focused coverage, not an exhaustive test of every field boundary or Django behaviour.
 
-Browser walkthroughs complemented the suite. Separate teacher and student sessions exercised uploads/downloads, enrolment, feedback and moderation. Real Redis/Celery processes delivered a material notification, and real WebSockets carried two-way chat. Reloading restored chat history; blocking an open tab stopped the next message. Screenshots and overflow checks covered desktop and 320/390-pixel mobile layouts. A long unbroken course title exposed horizontal scrolling and was fixed by allowing the heading to wrap.
-
-Swagger's Try it out successfully updated a temporary account using the session and CSRF token. Requests without that token were rejected, and another member's detail remained read-only. External browser requests were blocked during this check to verify local Swagger assets. Temporary accounts, courses and uploaded files were removed afterwards. The OpenAPI schema also passed `manage.py spectacular --validate --fail-on-warn`. These focused walkthroughs are not a complete accessibility or cross-browser audit.
+Separate teacher and student browser sessions exercised uploads, enrolment, feedback, moderation, Celery notifications and two-way WebSocket chat. Reloading restored chat history; blocking an open tab stopped its next message. Mobile-width checks found and fixed a long heading overflow. Swagger updated a temporary account with session and CSRF protection, while another member remained read-only. The OpenAPI schema also validated without warnings. These walkthroughs are not a complete accessibility or cross-browser audit.
 
 ## 11. Current local setup
 
 The development environment is macOS 26.6.2 with Python 3.12.9. The main dependencies are Django 5.2.17, DRF 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, Channels 4.3.2, Daphne 4.2.3 and drf-spectacular 0.29.0. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Psycopg provides the deployed PostgreSQL connection, dj-database-url reads it from the environment, and WhiteNoise serves collected static assets. `requirements.txt` pins the packages and their dependencies.
+
+The complete package and version list is:
+
+```text
+amqp==5.3.1
+asgiref==3.12.1
+attrs==26.1.0
+autobahn==26.7.1
+Automat==25.4.16
+billiard==4.2.4
+cbor2==6.1.4
+celery==5.6.3
+cffi==2.1.1
+channels==4.3.2
+channels_redis==4.3.0
+click==8.5.0
+click-didyoumean==0.3.1
+click-plugins==1.1.1.2
+click-repl==0.3.0
+constantly==23.10.4
+cryptography==46.0.5
+daphne==4.2.3
+Django==5.2.17
+dj-database-url==3.0.1
+djangorestframework==3.18.1
+drf-spectacular==0.29.0
+drf-spectacular-sidecar==2026.9.1
+factory_boy==3.3.3
+Faker==40.38.0
+hyperlink==21.0.0
+idna==3.19
+Incremental==24.11.0
+inflection==0.5.1
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+kombu==5.6.2
+msgpack==1.2.2
+packaging==26.3
+pillow==12.3.0
+prompt_toolkit==3.0.53
+psycopg==3.2.10
+psycopg-binary==3.2.10
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
+pycparser==3.0
+pyOpenSSL==25.3.0
+pypdf==6.18.1
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+redis==6.4.0
+referencing==0.37.0
+rpds-py==2026.6.3
+service-identity==24.2.0
+six==1.17.0
+sqlparse==0.6.0
+Twisted==26.4.0
+txaio==26.6.1
+typing_extensions==4.16.0
+tzdata==2026.4
+tzlocal==5.4.4
+ujson==6.0.0
+uritemplate==4.2.0
+vine==5.1.0
+wcwidth==0.8.3
+whitenoise==6.11.0
+zope.interface==8.6
+```
 
 From the project directory, create an environment and install the dependencies:
 
@@ -322,7 +387,7 @@ Creating teachers through admin prevents self-assignment of teacher privileges, 
 
 Serving photos through Django keeps member access checks in one place, but makes the web process handle each image request. A larger deployment would need to measure that cost before choosing a different delivery method. Upload limits are validated after Django receives the request; they do not replace request-size limits at the production web server.
 
-Old profile photos are now deleted after committed replacement/removal, but the database and filesystem are still separate systems: a failed storage operation or a newly uploaded file followed by transaction rollback can leave an orphan. A periodic reconciliation would be useful for a deployed application. Course-material replacement/deletion through admin also leaves its old files on disk; there is no user-facing material replacement workflow yet. Images are validated but not resized or stripped of metadata. Status updates can be posted and read, but users cannot yet edit or delete individual posts; the admin can manage them.
+The database and filesystem remain separate systems, so a failed storage operation or transaction rollback can leave an orphan. Course-material changes through admin can also leave old files. Images are validated but not resized or stripped of metadata, and status updates have no user-facing edit or delete action.
 
 Each course has one teacher and is available for enrolment as soon as it is created. There is no draft/published state, capacity limit or student withdrawal flow. This covers the current coursework workflow with a small schema, but a real teaching service would need to decide those policies. Role checks in model validation do not run on arbitrary ORM saves; the current web paths assign roles and relationships explicitly, while admin changes still require care. SQLite is sufficient for the local demonstration, but the sequential duplicate-enrolment tests do not establish behaviour under concurrent write load.
 
