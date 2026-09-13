@@ -85,3 +85,54 @@ There are 63 tests. They use temporary data and do not require Redis or Celery.
 `report.md` contains the development discussion; `er_diagram.mmd` contains the
 same model diagram embedded in the report. The final report PDF and video are
 separate deliverables.
+
+## Railway deployment
+
+The deployed project uses four Railway services: the Django web service,
+PostgreSQL, Redis and a Celery worker. Only the web service needs a public domain.
+
+First create an empty GitHub repository. Do not initialise it with another README
+or `.gitignore`, then push this repository:
+
+```sh
+git remote add origin https://github.com/YOUR-USERNAME/studyroom.git
+git push -u origin master
+```
+
+Create a blank Railway project and add PostgreSQL and Redis from the database
+menu. Add the GitHub repository as a service and name it `web`. In its Variables
+tab add:
+
+```text
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+REDIS_URL=${{Redis.REDIS_URL}}
+DJANGO_DEBUG=False
+SECRET_KEY=your-long-random-secret
+```
+
+A suitable secret can be generated locally without storing it in Git:
+
+```sh
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
+
+Set the web service's custom start command to `./start.sh`. The build command is
+read from `railway.json`. Attach a volume to this service at `/app/media`; this
+keeps profile photos and course files after a restart. Under Networking, generate
+a Railway domain. Railway supplies that domain to Django automatically.
+
+Add the same GitHub repository to the project a second time and name this service
+`worker`. Give it the same four variables and set its custom start command to:
+
+```sh
+celery -A studyroom worker --loglevel=INFO --pool=solo
+```
+
+The worker needs no public domain or volume. Apply the staged changes and deploy.
+The web start script runs migrations and the repeatable demo loader before Daphne.
+It then listens on Railway's supplied port and supports both HTTP and WebSockets.
+
+After deployment, test login, one protected download, chat in two sessions, and a
+material notification. Upload a small file, redeploy the web service and check the
+file again to confirm that the volume is persistent. PostgreSQL and Redis should
+remain private inside the Railway project.

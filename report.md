@@ -1,6 +1,6 @@
 # Studyroom — CM3035 Final Coursework
 
-> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation, notifications, course chat and the user REST API implemented. Clean installation and demo-data preparation are complete; final submission packaging and deployment are still pending. The working target is 60–65 tests for the finished application, with 63 currently retained. This note tracks work remaining and is not part of the submission text.
+> Draft status: accounts, profiles, courses/materials, feedback, teacher search, course moderation, notifications, course chat and the user REST API implemented. Clean installation, demo data and Railway configuration are complete; the live deployment and final submission packaging are still pending. The working target is 60–65 tests for the finished application, with 63 currently retained. This note tracks work remaining and is not part of the submission text.
 
 ## 1. Introduction and development approach
 
@@ -228,7 +228,7 @@ Swagger's Try it out successfully updated a temporary account using the session 
 
 ## 11. Current local setup
 
-The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. Installed direct dependencies are Django 5.2.17, djangorestframework 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, the redis Python client 6.4.0, Channels 4.3.2, channels-redis 4.3.0, Daphne 4.2.3, drf-spectacular 0.29.0 and drf-spectacular-sidecar 2026.9.1. The local Redis server is version 8.8.0. Pillow was added with photo uploads, pypdf with course materials, and Celery/Redis with notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. `requirements.txt` pins the installed Python packages, including their dependencies. Redis must be installed separately.
+The current development environment is macOS 26.6.2 with a separate Python 3.12.9 environment. The main dependencies are Django 5.2.17, DRF 3.18.1, factory_boy 3.3.3, Pillow 12.3.0, pypdf 6.18.1, Celery 5.6.3, Channels 4.3.2, Daphne 4.2.3 and drf-spectacular 0.29.0. The local Redis server is version 8.8.0. Pillow supports photo uploads, pypdf checks course materials, and Celery/Redis handle notifications. Django 5.2 was selected as the supported LTS alternative to the originally proposed 5.1 series [2]. Railway support adds psycopg for PostgreSQL, dj-database-url for its supplied connection string, and WhiteNoise for static assets. `requirements.txt` pins these packages and their dependencies. Redis must be installed separately for local use.
 
 From the project directory, create an environment and install the dependencies:
 
@@ -284,7 +284,7 @@ I rehearsed setup in a separate project copy with a fresh virtual environment, d
 
 ## 12. Deployment plan
 
-> Planning note: deployment follows integration testing. Compare hosts for ASGI/WebSocket support, Redis, a Celery worker, persistent storage and cost. Record the chosen configuration and verify HTTPS/WSS, permissions, uploads and persistence across restarts. No host has been selected or deployment carried out.
+> Planning note: Railway was selected because one project can contain the ASGI web service, PostgreSQL, Redis and a Celery worker [14]. A volume mounted on the web service preserves uploaded files [15]. The repository now contains its build and start commands, but the live deployment has not yet been carried out. After deployment I will verify HTTPS/WSS, permissions, uploads and persistence across restarts, then replace this note with the observed result.
 
 ## References
 
@@ -304,6 +304,8 @@ I rehearsed setup in a separate project copy with a fresh virtual environment, d
 11. drf-spectacular, [Documentation](https://drf-spectacular.readthedocs.io/en/latest/readme.html).
 12. Django documentation, [View decorators](https://docs.djangoproject.com/en/5.2/topics/http/decorators/).
 13. Django documentation, [The admin site](https://docs.djangoproject.com/en/5.2/ref/contrib/admin/).
+14. Railway documentation, [Deploy a Django app](https://docs.railway.com/guides/django).
+15. Railway documentation, [Using volumes](https://docs.railway.com/volumes).
 
 ## 13. Critical evaluation
 
