@@ -129,8 +129,9 @@ celery -A studyroom worker --loglevel=INFO --pool=solo
 ```
 
 The worker needs no public domain or volume. Apply the staged changes and deploy.
-The web start script runs migrations and the repeatable demo loader before Daphne.
-It then listens on Railway's supplied port and supports both HTTP and WebSockets.
+The web start script collects static files, runs migrations and loads the repeatable
+demo data before Daphne. It then listens on Railway's supplied port and supports
+both HTTP and WebSockets.
 
 After deployment, test login, one protected download, chat in two sessions, and a
 material notification. Upload a small file, redeploy the web service and check the
